@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = ["crates/core", "crates/native"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "warn"
+panic = "deny"
+panic_in_result_fn = "deny"
+unimplemented = "deny"
+allow_attributes = "deny"
+dbg_macro = "deny"
+todo = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+exit = "deny"
+module_name_repetitions = "allow"
+similar_names = "allow"
