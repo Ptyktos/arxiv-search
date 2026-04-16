@@ -1,4 +1,7 @@
+use quick_xml::{events::Event, Reader};
+
 use crate::error::ArxivError;
+use crate::paper::Paper;
 
 /// Query parameters for searching arXiv.
 pub struct QueryParams {
@@ -90,16 +93,156 @@ pub fn build_query_params(
     })
 }
 
+#[derive(Default)]
+struct EntryBuilder {
+    id: String,
+    title: String,
+    summary: String,
+    authors: Vec<String>,
+    published: String,
+    categories: Vec<String>,
+    url: String,
+}
+
+impl EntryBuilder {
+    fn into_paper(self) -> Result<Paper, ArxivError> {
+        if self.id.is_empty() {
+            return Err(ArxivError::ParseError("entry missing <id>".to_string()));
+        }
+        let id = extract_id_from_url(&self.id);
+        let url = if self.url.is_empty() {
+            format!("https://arxiv.org/abs/{id}")
+        } else {
+            self.url
+        };
+        Ok(Paper {
+            id,
+            title: self.title,
+            authors: self.authors,
+            abstract_text: self.summary.trim().to_string(),
+            categories: self.categories,
+            published: self.published,
+            url,
+        })
+    }
+}
+
+fn extract_id_from_url(url: &str) -> String {
+    url.rsplit('/')
+        .next()
+        .unwrap_or(url)
+        .split('v')
+        .next()
+        .unwrap_or(url)
+        .to_string()
+}
+
 /// Parse arXiv Atom XML response into paper structs.
 ///
 /// # Errors
 ///
 /// Returns `ParseError` if XML is malformed or required fields are missing.
-pub fn parse_response(_xml: &str) -> Result<Vec<crate::paper::Paper>, ArxivError> {
-    // Intentional placeholder - XML parsing will be implemented in Task 3
-    Err(ArxivError::ParseError(
-        "parse_response not yet implemented".to_string(),
-    ))
+pub fn parse_response(xml: &str) -> Result<Vec<Paper>, ArxivError> {
+    #[derive(PartialEq)]
+    enum Field {
+        Id,
+        Title,
+        Summary,
+        AuthorName,
+        Published,
+    }
+
+    let mut reader = Reader::from_str(xml);
+    reader.config_mut().trim_text(true);
+
+    let mut papers = Vec::new();
+    let mut entry: Option<EntryBuilder> = None;
+    let mut field: Option<Field> = None;
+    let mut buf = Vec::new();
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) => {
+                match e.local_name().as_ref() {
+                    b"entry" => entry = Some(EntryBuilder::default()),
+                    b"id" if entry.is_some() => field = Some(Field::Id),
+                    b"title" if entry.is_some() => field = Some(Field::Title),
+                    b"summary" if entry.is_some() => field = Some(Field::Summary),
+                    b"name" if entry.is_some() => field = Some(Field::AuthorName),
+                    b"published" if entry.is_some() => field = Some(Field::Published),
+                    _ => {}
+                }
+            }
+            Ok(Event::Empty(e)) if entry.is_some() => {
+                let name = e.local_name();
+                if name.as_ref() == b"category" {
+                    if let Some(ref mut b) = entry {
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == b"term" {
+                                let term = attr
+                                    .unescape_value()
+                                    .map_err(|err| ArxivError::ParseError(err.to_string()))?
+                                    .into_owned();
+                                b.categories.push(term);
+                            }
+                        }
+                    }
+                } else if name.as_ref() == b"link" {
+                    if let Some(ref mut b) = entry {
+                        let mut is_html = false;
+                        let mut href = String::new();
+                        for attr in e.attributes().flatten() {
+                            match attr.key.as_ref() {
+                                b"type" if attr.value.as_ref() == b"text/html" => {
+                                    is_html = true;
+                                }
+                                b"href" => {
+                                    href = attr
+                                        .unescape_value()
+                                        .map_err(|err| ArxivError::ParseError(err.to_string()))?
+                                        .into_owned();
+                                }
+                                _ => {}
+                            }
+                        }
+                        if is_html && !href.is_empty() {
+                            b.url = href;
+                        }
+                    }
+                }
+            }
+            Ok(Event::Text(e)) => {
+                if let (Some(f), Some(ref mut b)) = (&field, &mut entry) {
+                    let text = e
+                        .unescape()
+                        .map_err(|err| ArxivError::ParseError(err.to_string()))?
+                        .into_owned();
+                    match f {
+                        Field::Id => b.id = text,
+                        Field::Title => b.title = text.trim().to_string(),
+                        Field::Summary => b.summary = text,
+                        Field::AuthorName => b.authors.push(text),
+                        Field::Published => b.published = text,
+                    }
+                }
+                field = None;
+            }
+            Ok(Event::End(e)) => {
+                field = None;
+                if e.local_name().as_ref() == b"entry" {
+                    if let Some(builder) = entry.take() {
+                        papers.push(builder.into_paper()?);
+                    }
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => return Err(ArxivError::ParseError(e.to_string())),
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    Ok(papers)
 }
 
 #[cfg(test)]
@@ -185,5 +328,58 @@ mod tests {
         assert!(
             build_query_params("test", 10, Some("2020/01/01"), None, &[], "relevance").is_err()
         );
+    }
+
+    const FIXTURE_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>ArXiv Query</title>
+  <entry>
+    <id>http://arxiv.org/abs/2103.12345v1</id>
+    <title>Test Paper Title</title>
+    <summary>  This is the abstract.  </summary>
+    <author><name>Alice Smith</name></author>
+    <author><name>Bob Jones</name></author>
+    <published>2021-03-23T00:00:00Z</published>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
+    <link href="https://arxiv.org/abs/2103.12345v1" rel="alternate" type="text/html"/>
+  </entry>
+</feed>"#;
+
+    #[test]
+    fn parse_single_entry() {
+        let papers = parse_response(FIXTURE_XML).expect("fixture XML should parse");
+        assert_eq!(papers.len(), 1);
+        let p = &papers[0];
+        assert_eq!(p.id, "2103.12345");
+        assert_eq!(p.title, "Test Paper Title");
+        assert_eq!(p.abstract_text, "This is the abstract.");
+        assert_eq!(p.authors, vec!["Alice Smith", "Bob Jones"]);
+        assert_eq!(p.categories, vec!["cs.AI", "cs.LG"]);
+        assert_eq!(p.published, "2021-03-23T00:00:00Z");
+        assert_eq!(p.url, "https://arxiv.org/abs/2103.12345v1");
+    }
+
+    #[test]
+    fn parse_empty_feed() {
+        let xml = r#"<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"></feed>"#;
+        let papers = parse_response(xml).expect("empty feed should parse");
+        assert!(papers.is_empty());
+    }
+
+    #[test]
+    fn parse_missing_html_link_derives_url_from_id() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+    <id>http://arxiv.org/abs/1901.00001v1</id>
+    <title>Old Paper</title>
+    <summary>Abstract.</summary>
+    <published>2019-01-01T00:00:00Z</published>
+  </entry>
+</feed>"#;
+        let papers = parse_response(xml).expect("entry without link should parse");
+        assert_eq!(papers[0].id, "1901.00001");
+        assert_eq!(papers[0].url, "https://arxiv.org/abs/1901.00001");
     }
 }
