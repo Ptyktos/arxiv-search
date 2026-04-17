@@ -14,7 +14,7 @@ const SS_API_BASE: &str = "https://api.semanticscholar.org/graph/v1";
 const SS_REC_BASE: &str = "https://api.semanticscholar.org/recommendations/v1";
 const ARXIV_RATE_LIMIT: Duration = Duration::from_secs(3);
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct FetchClient {
     client: Client,
     last_arxiv_request: Arc<Mutex<Option<Instant>>>,
