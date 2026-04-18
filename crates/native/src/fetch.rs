@@ -209,10 +209,19 @@ mod tests {
     #[ignore = "requires network"]
     async fn search_returns_results() {
         let client = make_client();
-        let params =
-            build_query_params("attention mechanism transformer", 5, None, None, &[], "relevance")
-                .expect("failed to build query params");
-        let xml = client.fetch_arxiv_query(&params).await.expect("fetch failed");
+        let params = build_query_params(
+            "attention mechanism transformer",
+            5,
+            None,
+            None,
+            &[],
+            "relevance",
+        )
+        .expect("failed to build query params");
+        let xml = client
+            .fetch_arxiv_query(&params)
+            .await
+            .expect("fetch failed");
         let papers = parse_response(&xml).expect("parse failed");
         assert!(!papers.is_empty(), "search returned no results");
         assert!(!papers[0].title.is_empty());
@@ -238,7 +247,10 @@ mod tests {
     async fn download_paper_html_path() {
         let client = make_client();
         let html = client.fetch_html("2303.08774").await.expect("fetch failed");
-        assert!(html.is_some(), "expected HTML to be available for this paper");
+        assert!(
+            html.is_some(),
+            "expected HTML to be available for this paper"
+        );
         let md = to_markdown(html.as_deref().expect("html was None")).expect("markdown failed");
         assert!(md.len() > 100, "markdown output was suspiciously short");
     }
@@ -264,6 +276,9 @@ mod tests {
             .await
             .expect("fetch failed");
         let papers = parse_recommendations(&json).expect("parse failed");
-        assert!(!papers.is_empty(), "expected recommendations for attention paper");
+        assert!(
+            !papers.is_empty(),
+            "expected recommendations for attention paper"
+        );
     }
 }

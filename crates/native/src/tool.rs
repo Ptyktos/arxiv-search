@@ -26,9 +26,11 @@ impl ArxivServer {
 
 #[tool(tool_box)]
 impl ArxivServer {
-    #[tool(description = "Search arXiv for papers. Returns metadata, authors, abstracts, and \
+    #[tool(
+        description = "Search arXiv for papers. Returns metadata, authors, abstracts, and \
         categories. Supports arXiv field syntax: ti: (title), au: (author), abs: (abstract), \
-        and boolean AND/OR/ANDNOT operators.")]
+        and boolean AND/OR/ANDNOT operators."
+    )]
     async fn search_papers(
         &self,
         #[tool(param)]
@@ -44,9 +46,7 @@ impl ArxivServer {
         #[schemars(description = "End date filter in YYYY-MM-DD format.")]
         date_to: Option<String>,
         #[tool(param)]
-        #[schemars(
-            description = "arXiv categories to filter by, e.g. [\"cs.AI\", \"cs.LG\"]."
-        )]
+        #[schemars(description = "arXiv categories to filter by, e.g. [\"cs.AI\", \"cs.LG\"].")]
         categories: Option<Vec<String>>,
         #[tool(param)]
         #[schemars(description = "Sort by \"relevance\" (default) or \"date\".")]
@@ -68,8 +68,8 @@ impl ArxivServer {
             .await
             .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
 
-        let papers = parse_response(&xml)
-            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let papers =
+            parse_response(&xml).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
 
         let json = serde_json::to_string_pretty(&papers)
             .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
@@ -77,14 +77,14 @@ impl ArxivServer {
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
 
-    #[tool(description = "Fetch metadata and abstract for a specific arXiv paper by ID. \
-        Accepts IDs in formats: \"2103.12345\", \"arxiv:2103.12345\", or \"2103.12345v2\".")]
+    #[tool(
+        description = "Fetch metadata and abstract for a specific arXiv paper by ID. \
+        Accepts IDs in formats: \"2103.12345\", \"arxiv:2103.12345\", or \"2103.12345v2\"."
+    )]
     async fn get_abstract(
         &self,
         #[tool(param)]
-        #[schemars(
-            description = "arXiv paper ID, e.g. \"2103.12345\" or \"arxiv:2103.12345\"."
-        )]
+        #[schemars(description = "arXiv paper ID, e.g. \"2103.12345\" or \"arxiv:2103.12345\".")]
         paper_id: String,
     ) -> Result<CallToolResult, rmcp::Error> {
         let id = normalize_paper_id(&paper_id)
@@ -96,8 +96,8 @@ impl ArxivServer {
             .await
             .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
 
-        let papers = parse_response(&xml)
-            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let papers =
+            parse_response(&xml).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
 
         let paper = papers.into_iter().next().ok_or_else(|| {
             rmcp::Error::internal_error(format!("paper {id} not found on arXiv"), None)
@@ -109,15 +109,15 @@ impl ArxivServer {
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
 
-    #[tool(description = "Download an arXiv paper and return its content as markdown. \
+    #[tool(
+        description = "Download an arXiv paper and return its content as markdown. \
         Tries the HTML version first (clean, structured output); falls back to PDF text \
-        extraction if HTML is unavailable. Content is returned directly — not stored on disk.")]
+        extraction if HTML is unavailable. Content is returned directly — not stored on disk."
+    )]
     async fn download_paper(
         &self,
         #[tool(param)]
-        #[schemars(
-            description = "arXiv paper ID, e.g. \"2103.12345\" or \"arxiv:2103.12345\"."
-        )]
+        #[schemars(description = "arXiv paper ID, e.g. \"2103.12345\" or \"arxiv:2103.12345\".")]
         paper_id: String,
     ) -> Result<CallToolResult, rmcp::Error> {
         let id = normalize_paper_id(&paper_id)
@@ -129,8 +129,8 @@ impl ArxivServer {
             .await
             .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?
         {
-            let md = to_markdown(&html)
-                .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+            let md =
+                to_markdown(&html).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
             return Ok(CallToolResult::success(vec![Content::text(md)]));
         }
 
@@ -146,8 +146,10 @@ impl ArxivServer {
         Ok(CallToolResult::success(vec![Content::text(text)]))
     }
 
-    #[tool(description = "Get papers that cite a given arXiv paper, using the Semantic \
-        Scholar API. Set SEMANTIC_SCHOLAR_API_KEY environment variable for higher rate limits.")]
+    #[tool(
+        description = "Get papers that cite a given arXiv paper, using the Semantic \
+        Scholar API. Set SEMANTIC_SCHOLAR_API_KEY environment variable for higher rate limits."
+    )]
     async fn get_citations(
         &self,
         #[tool(param)]
@@ -168,8 +170,8 @@ impl ArxivServer {
             .await
             .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
 
-        let papers = parse_citations(&json)
-            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let papers =
+            parse_citations(&json).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
 
         let out = serde_json::to_string_pretty(&papers)
             .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
@@ -177,9 +179,11 @@ impl ArxivServer {
         Ok(CallToolResult::success(vec![Content::text(out)]))
     }
 
-    #[tool(description = "Get recommended papers similar to a given arXiv paper, using \
+    #[tool(
+        description = "Get recommended papers similar to a given arXiv paper, using \
         the Semantic Scholar recommendations API. Set SEMANTIC_SCHOLAR_API_KEY for higher \
-        rate limits.")]
+        rate limits."
+    )]
     async fn get_recommendations(
         &self,
         #[tool(param)]

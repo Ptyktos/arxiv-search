@@ -38,7 +38,9 @@ fn format_arxiv_date(date: &str) -> Result<String, ArxivError> {
         || parts[2].len() != 2
         || !parts.iter().all(|p| p.chars().all(|c| c.is_ascii_digit()))
     {
-        return Err(ArxivError::ParseError(format!("invalid date format: {date}")));
+        return Err(ArxivError::ParseError(format!(
+            "invalid date format: {date}"
+        )));
     }
     Ok(format!("{}{}{}0000", parts[0], parts[1], parts[2]))
 }
@@ -162,17 +164,15 @@ pub fn parse_response(xml: &str) -> Result<Vec<Paper>, ArxivError> {
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) => {
-                match e.local_name().as_ref() {
-                    b"entry" => entry = Some(EntryBuilder::default()),
-                    b"id" if entry.is_some() => field = Some(Field::Id),
-                    b"title" if entry.is_some() => field = Some(Field::Title),
-                    b"summary" if entry.is_some() => field = Some(Field::Summary),
-                    b"name" if entry.is_some() => field = Some(Field::AuthorName),
-                    b"published" if entry.is_some() => field = Some(Field::Published),
-                    _ => {}
-                }
-            }
+            Ok(Event::Start(e)) => match e.local_name().as_ref() {
+                b"entry" => entry = Some(EntryBuilder::default()),
+                b"id" if entry.is_some() => field = Some(Field::Id),
+                b"title" if entry.is_some() => field = Some(Field::Title),
+                b"summary" if entry.is_some() => field = Some(Field::Summary),
+                b"name" if entry.is_some() => field = Some(Field::AuthorName),
+                b"published" if entry.is_some() => field = Some(Field::Published),
+                _ => {}
+            },
             Ok(Event::Empty(e)) if entry.is_some() => {
                 let name = e.local_name();
                 if name.as_ref() == b"category" {
@@ -303,23 +303,31 @@ mod tests {
 
     #[test]
     fn query_with_dates() {
-        let p = build_query_params("bert", 10, Some("2020-01-01"), Some("2020-12-31"), &[], "date")
-            .expect("valid query with dates");
-        assert_eq!(p.search_query, "bert AND submittedDate:[202001010000 TO 202012310000]");
+        let p = build_query_params(
+            "bert",
+            10,
+            Some("2020-01-01"),
+            Some("2020-12-31"),
+            &[],
+            "date",
+        )
+        .expect("valid query with dates");
+        assert_eq!(
+            p.search_query,
+            "bert AND submittedDate:[202001010000 TO 202012310000]"
+        );
         assert_eq!(p.sort_by, "submittedDate");
     }
 
     #[test]
     fn max_results_capped_at_50() {
-        let p = build_query_params("test", 200, None, None, &[], "relevance")
-            .expect("valid query");
+        let p = build_query_params("test", 200, None, None, &[], "relevance").expect("valid query");
         assert_eq!(p.max_results, 50);
     }
 
     #[test]
     fn max_results_minimum_one() {
-        let p = build_query_params("test", 0, None, None, &[], "relevance")
-            .expect("valid query");
+        let p = build_query_params("test", 0, None, None, &[], "relevance").expect("valid query");
         assert_eq!(p.max_results, 1);
     }
 
