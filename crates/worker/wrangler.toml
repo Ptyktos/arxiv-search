@@ -1,0 +1,7 @@
+name = "arxiv-search-rs-mcp"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+main = "build/worker/shim.mjs"
+
+[build]
+command = "cargo install -q worker-build && worker-build --release"
