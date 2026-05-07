@@ -5,6 +5,7 @@ pub mod html;
 pub mod paper;
 pub mod semantic_scholar;
 pub mod ingestion;
+pub mod search;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod pdf;
