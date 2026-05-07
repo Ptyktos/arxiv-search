@@ -12,8 +12,9 @@ use tool::ArxivServer;
 #[command(
     name = "arxiv-search-mcp",
     about = "arXiv Search MCP Server",
-    long_about = "Exposes MCP tools for searching arXiv, fetching paper content, \
-                  and querying Semantic Scholar for citations and recommendations.\n\n\
+    long_about = "Exposes MCP tools for searching arXiv and retrieving prepared paper content. \
+                  The native binary is for local MCP clients and Claude Desktop; the repo also \
+                  includes a Cloudflare Worker entrypoint under crates/worker.\n\n\
                   Use --stdio for Claude Desktop and local MCP clients.\n\
                   Default: HTTP/SSE server.\n\n\
                   Optional env vars:\n\

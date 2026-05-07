@@ -14,9 +14,11 @@ use serde_json::Value;
 
 use arxiv_search_rs_mcp_core::{
     arxiv::{build_query_params, normalize_paper_id, parse_response},
+    content::{prepare_paper, PreparationOptions},
     html::to_markdown,
     pdf::extract_text,
     semantic_scholar::{parse_citations, parse_recommendations},
+    Paper,
 };
 
 use crate::fetch::FetchClient;
@@ -77,6 +79,15 @@ paths:
                 - type: array
                   items:
                     $ref: '#/components/schemas/Operation'
+  /retrieve:
+    post:
+      summary: Retrieve, prune, and chunk a paper for LLM ingestion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetrieveInput'
 components:
   schemas:
     Operation:
@@ -85,8 +96,8 @@ components:
       properties:
         op:
           type: string
-          enum: [abstract, download, citations, recs]
-          description: "abstract=metadata+abstract, download=full markdown text, citations=papers citing this (SS), recs=similar papers (SS)"
+          enum: [abstract, download, citations, recs, retrieve]
+          description: "abstract=metadata+abstract, download=full markdown text, citations=papers citing this (SS), recs=similar papers (SS), retrieve=prepared content"
         id:
           type: string
           description: "arXiv ID: \"1706.03762\", \"arxiv:1706.03762\", or \"1706.03762v2\""
@@ -94,6 +105,31 @@ components:
           type: integer
           default: 10
           description: "citations: max 100. recs: max 50."
+        prune_references:
+          type: boolean
+          default: true
+        chunk_chars:
+          type: integer
+          default: 4000
+        chunk_overlap:
+          type: integer
+          default: 200
+    RetrieveInput:
+      type: object
+      required: [paper_id]
+      properties:
+        paper_id:
+          type: string
+          description: "arXiv ID: \"1706.03762\", \"arxiv:1706.03762\", or \"1706.03762v2\""
+        prune_references:
+          type: boolean
+          default: true
+        chunk_chars:
+          type: integer
+          default: 4000
+        chunk_overlap:
+          type: integer
+          default: 200
 "#;
 
 const OPENAPI_URI: &str = "arxiv://openapi";
@@ -124,6 +160,35 @@ struct Operation {
     op: String,
     id: String,
     limit: Option<u32>,
+    #[serde(default = "default_true")]
+    prune_references: bool,
+    #[serde(default = "default_chunk_chars")]
+    chunk_chars: usize,
+    #[serde(default = "default_chunk_overlap")]
+    chunk_overlap: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct RetrieveInput {
+    paper_id: String,
+    #[serde(default = "default_true")]
+    prune_references: bool,
+    #[serde(default = "default_chunk_chars")]
+    chunk_chars: usize,
+    #[serde(default = "default_chunk_overlap")]
+    chunk_overlap: usize,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_chunk_chars() -> usize {
+    4_000
+}
+
+fn default_chunk_overlap() -> usize {
+    200
 }
 
 #[derive(Debug, Clone)]
@@ -201,11 +266,104 @@ impl ArxivServer {
                 serde_json::to_value(papers)
                     .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))
             }
+            "retrieve" => {
+                let (source, text) = if let Some(html) = self
+                    .client
+                    .fetch_html(&id)
+                    .await
+                    .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?
+                {
+                    let md = to_markdown(&html)
+                        .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+                    ("html", md)
+                } else {
+                    let bytes = self
+                        .client
+                        .fetch_pdf(&id)
+                        .await
+                        .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+                    let text = extract_text(&bytes)
+                        .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+                    ("pdf", text)
+                };
+
+                let paper = Paper {
+                    id: id.clone(),
+                    title: id.clone(),
+                    authors: Vec::new(),
+                    abstract_text: String::new(),
+                    categories: Vec::new(),
+                    published: String::new(),
+                    url: format!("https://arxiv.org/abs/{id}"),
+                };
+
+                let prepared = prepare_paper(
+                    paper,
+                    source,
+                    text,
+                    PreparationOptions {
+                        prune_references: op.prune_references,
+                        chunk_chars: op.chunk_chars,
+                        chunk_overlap: op.chunk_overlap,
+                    },
+                );
+
+                serde_json::to_value(prepared)
+                    .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))
+            }
             unknown => Err(rmcp::Error::invalid_params(
-                format!("unknown op \"{unknown}\"; valid: abstract, download, citations, recs"),
+                format!("unknown op \"{unknown}\"; valid: abstract, download, citations, recs, retrieve"),
                 None,
             )),
         }
+    }
+
+    async fn run_retrieve(&self, input: RetrieveInput) -> Result<Value, rmcp::Error> {
+        let id = normalize_paper_id(&input.paper_id)
+            .map_err(|e| rmcp::Error::invalid_params(e.to_string(), None))?;
+
+        let source_and_text = if let Some(html) = self
+            .client
+            .fetch_html(&id)
+            .await
+            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?
+        {
+            let md =
+                to_markdown(&html).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+            ("html", md)
+        } else {
+            let bytes = self
+                .client
+                .fetch_pdf(&id)
+                .await
+                .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+            let text = extract_text(&bytes)
+                .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+            ("pdf", text)
+        };
+
+        let paper = Paper {
+            id: id.clone(),
+            title: id.clone(),
+            authors: Vec::new(),
+            abstract_text: String::new(),
+            categories: Vec::new(),
+            published: String::new(),
+            url: format!("https://arxiv.org/abs/{id}"),
+        };
+
+        let prepared = prepare_paper(
+            paper,
+            source_and_text.0,
+            source_and_text.1,
+            PreparationOptions {
+                prune_references: input.prune_references,
+                chunk_chars: input.chunk_chars,
+                chunk_overlap: input.chunk_overlap,
+            },
+        );
+
+        serde_json::to_value(prepared).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))
     }
 }
 
@@ -243,6 +401,26 @@ impl ArxivServer {
         let out = serde_json::to_string_pretty(&papers)
             .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
 
+        Ok(CallToolResult::success(vec![Content::text(out)]))
+    }
+
+    #[tool(
+        description = "Retrieve, prune, and chunk a paper into LLM-ready content. \
+        JSON input — schema at arxiv://openapi."
+    )]
+    async fn retrieve_paper(
+        &self,
+        #[tool(param)]
+        #[schemars(
+            description = "JSON object with paper_id, prune_references, chunk_chars, and chunk_overlap."
+        )]
+        code: String,
+    ) -> Result<CallToolResult, rmcp::Error> {
+        let input: RetrieveInput = serde_json::from_str(&code)
+            .map_err(|e| rmcp::Error::invalid_params(format!("invalid JSON: {e}"), None))?;
+        let out = self.run_retrieve(input).await?;
+        let out = serde_json::to_string_pretty(&out)
+            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![Content::text(out)]))
     }
 
@@ -323,7 +501,8 @@ impl ServerHandler for ArxivServer {
                     uri: OPENAPI_URI.to_string(),
                     name: "arXiv MCP OpenAPI Schema".to_string(),
                     description: Some(
-                        "OpenAPI 3.0 schema for the search and execute tool inputs.".to_string(),
+                        "OpenAPI 3.0 schema for search, retrieve, and legacy execute inputs."
+                            .to_string(),
                     ),
                     mime_type: Some("application/yaml".to_string()),
                     size: u32::try_from(OPENAPI_SPEC.len()).ok(),
