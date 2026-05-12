@@ -143,6 +143,12 @@ impl ArxivCache {
         fs::write(path, content).await?;
         Ok(())
     }
+
+    /// Returns the path to the cache directory.
+    #[must_use]
+    pub const fn get_cache_dir(&self) -> &std::path::PathBuf {
+        &self.cache_dir
+    }
 }
 
 #[cfg(test)]

@@ -26,6 +26,8 @@ pub struct FetchClient {
     rate_limiter: Arc<dyn RateLimiter>,
     ss_api_key: Option<String>,
     cache: ArxivCache,
+    #[cfg(feature = "embedded-db")]
+    pub db: Option<crate::db::Database>,
 }
 
 impl std::fmt::Debug for FetchClient {
@@ -53,11 +55,26 @@ impl FetchClient {
             .build()
             .context("failed to build HTTP client")?;
         let cache = ArxivCache::new(DEFAULT_CACHE_TTL).await?;
+
+        #[cfg(feature = "embedded-db")]
+        let db = {
+            let db_path = cache.get_cache_dir().join("arxiv_rag.db");
+            match crate::db::Database::init(&db_path) {
+                Ok(database) => Some(database),
+                Err(e) => {
+                    tracing::error!("Failed to initialize embedded database: {:?}", e);
+                    None
+                }
+            }
+        };
+
         Ok(Self {
             client,
             rate_limiter: Arc::new(TokioRateLimiter::new(ARXIV_RATE_LIMIT)),
             ss_api_key,
             cache,
+            #[cfg(feature = "embedded-db")]
+            db,
         })
     }
 

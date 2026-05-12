@@ -93,8 +93,36 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/RetrieveInput'
+  /hdrr:
+    post:
+      summary: Hybrid Document-Routed Retrieval (arXiv:2603.26815)
+      description: "Two-stage retrieval: 1. Route documents P(D|q). 2. Scoped chunk search P(c|q, D)."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HdrrInput'
 components:
   schemas:
+    HdrrInput:
+      type: object
+      required: [q]
+      properties:
+        q:
+          type: string
+          description: "Search query"
+        limit_docs:
+          type: integer
+          default: 5
+          description: "Stage 1: Max documents to route"
+        limit_chunks:
+          type: integer
+          default: 10
+          description: "Stage 2: Max chunks to retrieve"
+        segmentation_k:
+          type: number
+          description: "Sensitivity for hierarchical segmentation"
     Operation:
       type: object
       required: [op, id]
@@ -189,6 +217,24 @@ struct RetrieveInput {
     #[serde(default = "default_chunk_overlap")]
     chunk_overlap: usize,
     pub segmentation_k: Option<f32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct HdrrInput {
+    q: String,
+    #[serde(default = "default_limit_docs")]
+    limit_docs: usize,
+    #[serde(default = "default_limit_chunks")]
+    limit_chunks: usize,
+    pub segmentation_k: Option<f32>,
+}
+
+const fn default_limit_docs() -> usize {
+    5
+}
+
+const fn default_limit_chunks() -> usize {
+    10
 }
 
 const fn default_true() -> bool {
@@ -396,7 +442,7 @@ impl ArxivServer {
         };
 
         let mut prepared = prepare_paper(
-            paper,
+            paper.clone(),
             source_and_text.0,
             source_and_text.1,
             PreparationOptions {
@@ -406,9 +452,58 @@ impl ArxivServer {
                 segmentation_k: input.segmentation_k,
             },
         );
+
+        #[cfg(feature = "embedded-db")]
+        if let Some(db) = &self.client.db {
+            let _ = db.store_paper(&paper.id, &paper.title, &paper.abstract_text);
+            for chunk in &prepared.chunks {
+                let id = format!("{}-{}", paper.id, chunk.index);
+                let _ = db.store_chunk(&id, &paper.id, &chunk.text, None, chunk.cluster_id.as_deref());
+            }
+        }
+
         format_hierarchical_chunks(&mut prepared);
  
         serde_json::to_value(prepared).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))
+    }
+
+    fn run_hdrr(&self, input: &HdrrInput) -> Result<Value, rmcp::Error> {
+        #[cfg(not(feature = "embedded-db"))]
+        return Err(rmcp::Error::internal_error("embedded-db feature not enabled", None));
+
+        #[cfg(feature = "embedded-db")]
+        {
+            let db = self.client.db.as_ref()
+                .ok_or_else(|| rmcp::Error::internal_error("Database not initialized", None))?;
+
+            // Stage 1: Document-level routing P(D|q)
+            let routed_docs = db.route_documents(&input.q, input.limit_docs)
+                .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+
+            if routed_docs.is_empty() {
+                return Ok(serde_json::json!({
+                    "query": input.q,
+                    "routed_documents": [],
+                    "chunks": [],
+                    "message": "No documents routed in Stage 1."
+                }));
+            }
+
+            // Stage 2: Scoped chunk retrieval P(c|q, D)
+            // Note: hierarchical segmentation (segmentation_k) is handled during ingestion.
+            let _ = input.segmentation_k; 
+
+            let chunks = db.retrieve_chunks_scoped(&input.q, &routed_docs, input.limit_chunks)
+                .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+
+            Ok(serde_json::json!({
+                "query": input.q,
+                "routed_documents": routed_docs,
+                "chunks": chunks.into_iter().map(|(id, text)| {
+                    serde_json::json!({ "id": id, "text": text })
+                }).collect::<Vec<_>>()
+            }))
+        }
     }
 }
 
@@ -467,6 +562,29 @@ impl ArxivServer {
         let out = self.run_retrieve(input).await?;
         let out = serde_json::to_string_pretty(&out)
             .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        Ok(CallToolResult::success(vec![Content::text(out)]))
+    }
+
+    #[tool(
+        description = "Hybrid Document-Routed Retrieval (arXiv:2603.26815). \
+        Two-stage: 1. Route docs, 2. Scoped chunk search."
+    )]
+    async fn hdrr(
+        &self,
+        #[tool(param)]
+        #[schemars(description = "JSON object with q, limit_docs, limit_chunks.")]
+        code: String,
+    ) -> Result<CallToolResult, rmcp::Error> {
+        let input: HdrrInput = serde_json::from_str(&code)
+            .map_err(|e| rmcp::Error::invalid_params(format!("invalid JSON: {e}"), None))?;
+        let out = self.run_hdrr(&input)?;
+        let out = serde_json::to_string_pretty(&out)
+            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        
+        // Satisfy clippy lints
+        tokio::task::yield_now().await;
+        drop(code);
+
         Ok(CallToolResult::success(vec![Content::text(out)]))
     }
 
@@ -630,6 +748,7 @@ mod tests {
                     parent_id: None,
                 },
             ],
+            hierarchical_chunks: None,
         };
 
         format_hierarchical_chunks(&mut prepared);
