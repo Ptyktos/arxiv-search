@@ -348,6 +348,8 @@ mod tests {
             categories: vec![],
             published: "2024".into(),
             url: "https://arxiv.org/abs/1234.5678".into(),
+            doi: None,
+            journal_ref: None,
         };
         let prepared = prepare_paper(
             paper,

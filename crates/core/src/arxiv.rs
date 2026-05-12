@@ -7,6 +7,7 @@ use crate::paper::Paper;
 pub struct QueryParams {
     pub search_query: String,
     pub max_results: u32,
+    pub start: u32,
     pub sort_by: String,
     pub sort_order: String,
 }
@@ -71,6 +72,7 @@ fn sanitize_lucene_query(q: &str) -> String {
 pub fn build_query_params(
     query: &str,
     max_results: u32,
+    offset: u32,
     date_from: Option<&str>,
     date_to: Option<&str>,
     categories: &[String],
@@ -108,9 +110,18 @@ pub fn build_query_params(
     Ok(QueryParams {
         search_query: q,
         max_results: max_results.clamp(1, 50),
+        start: offset,
         sort_by: sort_by_param.to_string(),
         sort_order: "descending".to_string(),
     })
+}
+
+/// A search response from arXiv, including metadata and papers.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct ArxivResponse {
+    pub papers: Vec<Paper>,
+    pub total_results: u32,
+    pub start_index: u32,
 }
 
 #[derive(Default)]
@@ -122,6 +133,8 @@ struct EntryBuilder {
     published: String,
     categories: Vec<String>,
     url: String,
+    doi: Option<String>,
+    journal_ref: Option<String>,
 }
 
 impl EntryBuilder {
@@ -143,6 +156,8 @@ impl EntryBuilder {
             categories: self.categories,
             published: self.published,
             url,
+            doi: self.doi,
+            journal_ref: self.journal_ref,
         })
     }
 }
@@ -162,7 +177,7 @@ fn extract_id_from_url(url: &str) -> String {
 /// # Errors
 ///
 /// Returns `ParseError` if XML is malformed or required fields are missing.
-pub fn parse_response(xml: &str) -> Result<Vec<Paper>, ArxivError> {
+pub fn parse_response(xml: &str) -> Result<ArxivResponse, ArxivError> {
     #[derive(PartialEq)]
     enum Field {
         Id,
@@ -170,6 +185,10 @@ pub fn parse_response(xml: &str) -> Result<Vec<Paper>, ArxivError> {
         Summary,
         AuthorName,
         Published,
+        Doi,
+        JournalRef,
+        TotalResults,
+        StartIndex,
     }
 
     let mut reader = Reader::from_str(xml);
@@ -178,6 +197,8 @@ pub fn parse_response(xml: &str) -> Result<Vec<Paper>, ArxivError> {
     let mut papers = Vec::new();
     let mut entry: Option<EntryBuilder> = None;
     let mut field: Option<Field> = None;
+    let mut total_results = 0;
+    let mut start_index = 0;
     let mut buf = Vec::new();
 
     loop {
@@ -189,6 +210,10 @@ pub fn parse_response(xml: &str) -> Result<Vec<Paper>, ArxivError> {
                 b"summary" if entry.is_some() => field = Some(Field::Summary),
                 b"name" if entry.is_some() => field = Some(Field::AuthorName),
                 b"published" if entry.is_some() => field = Some(Field::Published),
+                b"doi" if entry.is_some() => field = Some(Field::Doi),
+                b"journal_ref" if entry.is_some() => field = Some(Field::JournalRef),
+                b"totalResults" => field = Some(Field::TotalResults),
+                b"startIndex" => field = Some(Field::StartIndex),
                 _ => {}
             },
             Ok(Event::Empty(e)) if entry.is_some() => {
@@ -230,17 +255,33 @@ pub fn parse_response(xml: &str) -> Result<Vec<Paper>, ArxivError> {
                 }
             }
             Ok(Event::Text(e)) => {
-                if let (Some(f), Some(ref mut b)) = (&field, &mut entry) {
-                    let text = e
-                        .unescape()
-                        .map_err(|err| ArxivError::ParseError(err.to_string()))?
-                        .into_owned();
+                let text = e
+                    .unescape()
+                    .map_err(|err| ArxivError::ParseError(err.to_string()))?
+                    .into_owned();
+
+                if let Some(f) = &field {
                     match f {
-                        Field::Id => b.id = text,
-                        Field::Title => b.title = text.trim().to_string(),
-                        Field::Summary => b.summary = text,
-                        Field::AuthorName => b.authors.push(text),
-                        Field::Published => b.published = text,
+                        Field::TotalResults => {
+                            total_results = text.parse().unwrap_or(0);
+                        }
+                        Field::StartIndex => {
+                            start_index = text.parse().unwrap_or(0);
+                        }
+                        _ => {
+                            if let Some(ref mut b) = entry {
+                                match f {
+                                    Field::Id => b.id = text,
+                                    Field::Title => b.title = text.trim().to_string(),
+                                    Field::Summary => b.summary = text,
+                                    Field::AuthorName => b.authors.push(text),
+                                    Field::Published => b.published = text,
+                                    Field::Doi => b.doi = Some(text),
+                                    Field::JournalRef => b.journal_ref = Some(text),
+                                    _ => {}
+                                }
+                            }
+                        }
                     }
                 }
                 field = None;
@@ -260,7 +301,11 @@ pub fn parse_response(xml: &str) -> Result<Vec<Paper>, ArxivError> {
         buf.clear();
     }
 
-    Ok(papers)
+    Ok(ArxivResponse {
+        papers,
+        total_results,
+        start_index,
+    })
 }
 
 #[cfg(test)]
@@ -303,10 +348,11 @@ mod tests {
 
     #[test]
     fn basic_query() {
-        let p = build_query_params("attention mechanism", 10, None, None, &[], "relevance")
+        let p = build_query_params("attention mechanism", 10, 0, None, None, &[], "relevance")
             .expect("valid query params");
         assert_eq!(p.search_query, "attention mechanism");
         assert_eq!(p.max_results, 10);
+        assert_eq!(p.start, 0);
         assert_eq!(p.sort_by, "relevance");
         assert_eq!(p.sort_order, "descending");
     }
@@ -314,9 +360,10 @@ mod tests {
     #[test]
     fn query_with_categories() {
         let cats = vec!["cs.AI".to_string(), "cs.LG".to_string()];
-        let p = build_query_params("transformers", 5, None, None, &cats, "relevance")
+        let p = build_query_params("transformers", 5, 10, None, None, &cats, "relevance")
             .expect("valid query with categories");
         assert_eq!(p.search_query, "transformers AND (cat:cs.AI OR cat:cs.LG)");
+        assert_eq!(p.start, 10);
     }
 
     #[test]
@@ -324,6 +371,7 @@ mod tests {
         let p = build_query_params(
             "bert",
             10,
+            0,
             Some("2020-01-01"),
             Some("2020-12-31"),
             &[],
@@ -339,20 +387,20 @@ mod tests {
 
     #[test]
     fn max_results_capped_at_50() {
-        let p = build_query_params("test", 200, None, None, &[], "relevance").expect("valid query");
+        let p = build_query_params("test", 200, 0, None, None, &[], "relevance").expect("valid query");
         assert_eq!(p.max_results, 50);
     }
 
     #[test]
     fn max_results_minimum_one() {
-        let p = build_query_params("test", 0, None, None, &[], "relevance").expect("valid query");
+        let p = build_query_params("test", 0, 0, None, None, &[], "relevance").expect("valid query");
         assert_eq!(p.max_results, 1);
     }
 
     #[test]
     fn query_with_invalid_date_returns_error() {
         assert!(
-            build_query_params("test", 10, Some("2020/01/01"), None, &[], "relevance").is_err()
+            build_query_params("test", 10, 0, Some("2020/01/01"), None, &[], "relevance").is_err()
         );
     }
 
@@ -374,7 +422,8 @@ mod tests {
 
     #[test]
     fn parse_single_entry() {
-        let papers = parse_response(FIXTURE_XML).expect("fixture XML should parse");
+        let response = parse_response(FIXTURE_XML).expect("fixture XML should parse");
+        let papers = response.papers;
         assert_eq!(papers.len(), 1);
         let p = &papers[0];
         assert_eq!(p.id, "2103.12345");
@@ -389,8 +438,8 @@ mod tests {
     #[test]
     fn parse_empty_feed() {
         let xml = r#"<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"></feed>"#;
-        let papers = parse_response(xml).expect("empty feed should parse");
-        assert!(papers.is_empty());
+        let response = parse_response(xml).expect("empty feed should parse");
+        assert!(response.papers.is_empty());
     }
 
     #[test]
@@ -404,8 +453,34 @@ mod tests {
     <published>2019-01-01T00:00:00Z</published>
   </entry>
 </feed>"#;
-        let papers = parse_response(xml).expect("entry without link should parse");
+        let response = parse_response(xml).expect("entry without link should parse");
+        let papers = response.papers;
         assert_eq!(papers[0].id, "1901.00001");
         assert_eq!(papers[0].url, "https://arxiv.org/abs/1901.00001");
+    }
+
+    #[test]
+    fn parse_extended_metadata() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <opensearch:totalResults>1000</opensearch:totalResults>
+  <opensearch:startIndex>50</opensearch:startIndex>
+  <entry>
+    <id>http://arxiv.org/abs/2103.12345v1</id>
+    <title>Extended Paper</title>
+    <summary>Abstract.</summary>
+    <author><name>Author</name></author>
+    <published>2021-03-23T00:00:00Z</published>
+    <arxiv:doi>10.1000/12345</arxiv:doi>
+    <arxiv:journal_ref>Nature 2021</arxiv:journal_ref>
+  </entry>
+</feed>"#;
+        let response = parse_response(xml).expect("extended XML should parse");
+        assert_eq!(response.total_results, 1000);
+        assert_eq!(response.start_index, 50);
+        assert_eq!(response.papers.len(), 1);
+        let p = &response.papers[0];
+        assert_eq!(p.doi, Some("10.1000/12345".to_string()));
+        assert_eq!(p.journal_ref, Some("Nature 2021".to_string()));
     }
 }

@@ -48,6 +48,11 @@ paths:
                   minimum: 1
                   maximum: 50
                   description: Max results
+                offset:
+                  type: integer
+                  default: 0
+                  minimum: 0
+                  description: "Starting index for pagination"
                 from:
                   type: string
                   format: date
@@ -139,6 +144,8 @@ struct SearchInput {
     q: String,
     #[serde(default = "default_n")]
     n: u32,
+    #[serde(default)]
+    offset: u32,
     from: Option<String>,
     to: Option<String>,
     #[serde(default)]
@@ -213,9 +220,9 @@ impl ArxivServer {
                     .fetch_arxiv_by_id(&id)
                     .await
                     .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-                let papers = parse_response(&xml)
+                let response = parse_response(&xml)
                     .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-                let paper = papers
+                let paper = response.papers
                     .into_iter()
                     .next()
                     .ok_or_else(|| rmcp::Error::internal_error(format!("{id} not found"), None))?;
@@ -295,6 +302,8 @@ impl ArxivServer {
                     categories: Vec::new(),
                     published: String::new(),
                     url: format!("https://arxiv.org/abs/{id}"),
+                    doi: None,
+                    journal_ref: None,
                 };
 
                 let prepared = prepare_paper(
@@ -350,6 +359,8 @@ impl ArxivServer {
             categories: Vec::new(),
             published: String::new(),
             url: format!("https://arxiv.org/abs/{id}"),
+            doi: None,
+            journal_ref: None,
         };
 
         let prepared = prepare_paper(
@@ -382,6 +393,7 @@ impl ArxivServer {
         let params = build_query_params(
             &input.q,
             input.n,
+            input.offset,
             input.from.as_deref(),
             input.to.as_deref(),
             &input.cats,
@@ -395,10 +407,10 @@ impl ArxivServer {
             .await
             .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
 
-        let papers =
+        let response =
             parse_response(&xml).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
 
-        let out = serde_json::to_string_pretty(&papers)
+        let out = serde_json::to_string_pretty(&response)
             .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
 
         Ok(CallToolResult::success(vec![Content::text(out)]))

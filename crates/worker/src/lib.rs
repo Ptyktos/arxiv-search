@@ -43,6 +43,9 @@ struct SearchInput {
     /// Maximum number of results to return (default: 10).
     #[serde(default = "default_n")]
     n: u32,
+    /// Starting index for pagination (default: 0).
+    #[serde(default)]
+    offset: u32,
     /// Filter results by start date (YYYY-MM-DD).
     from: Option<String>,
     /// Filter results by end date (YYYY-MM-DD).
@@ -162,9 +165,10 @@ async fn fetch_arxiv_query(
     params: &arxiv_search_rs_mcp_core::arxiv::QueryParams,
 ) -> std::result::Result<String, String> {
     let url = format!(
-        "{ARXIV_API_BASE}?search_query={}&max_results={}&sortBy={}&sortOrder={}",
+        "{ARXIV_API_BASE}?search_query={}&max_results={}&start={}&sortBy={}&sortOrder={}",
         urlencoding::encode(&params.search_query),
         params.max_results,
+        params.start,
         params.sort_by,
         params.sort_order,
     );
@@ -194,6 +198,7 @@ async fn handle_search_papers(args: &serde_json::Value) -> std::result::Result<S
     let params = build_query_params(
         &input.q,
         input.n,
+        input.offset,
         input.from.as_deref(),
         input.to.as_deref(),
         &input.cats,
@@ -201,8 +206,8 @@ async fn handle_search_papers(args: &serde_json::Value) -> std::result::Result<S
     )
     .map_err(|e| e.to_string())?;
     let xml = fetch_arxiv_query(&params).await?;
-    let papers = parse_response(&xml).map_err(|e| e.to_string())?;
-    serde_json::to_string_pretty(&papers).map_err(|e| e.to_string())
+    let response = parse_response(&xml).map_err(|e| e.to_string())?;
+    serde_json::to_string_pretty(&response).map_err(|e| e.to_string())
 }
 
 async fn handle_retrieve_paper(args: &serde_json::Value) -> std::result::Result<String, String> {
@@ -225,6 +230,8 @@ async fn handle_retrieve_paper(args: &serde_json::Value) -> std::result::Result<
         categories: Vec::new(),
         published: String::new(),
         url: format!("https://arxiv.org/abs/{paper_id}"),
+        doi: None,
+        journal_ref: None,
     };
 
     let prepared = prepare_paper(
@@ -274,6 +281,12 @@ async fn dispatch(rpc: RpcRequest) -> RpcResponse {
                                     "title": "Max Results",
                                     "description": "Maximum number of results to return (default: 10).",
                                     "default": 10 
+                                },
+                                "offset": {
+                                    "type": "integer",
+                                    "title": "Offset",
+                                    "description": "Starting index for pagination (default: 0).",
+                                    "default": 0
                                 },
                                 "from": { 
                                     "type": "string", 

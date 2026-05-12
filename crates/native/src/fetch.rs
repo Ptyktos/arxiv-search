@@ -69,6 +69,7 @@ impl FetchClient {
                 .query(&[
                     ("search_query", params.search_query.as_str()),
                     ("max_results", &params.max_results.to_string()),
+                    ("start", &params.start.to_string()),
                     ("sortBy", params.sort_by.as_str()),
                     ("sortOrder", params.sort_order.as_str()),
                 ])
@@ -238,6 +239,7 @@ mod tests {
         let params = build_query_params(
             "attention mechanism transformer",
             5,
+            0,
             None,
             None,
             &[],
@@ -248,7 +250,8 @@ mod tests {
             .fetch_arxiv_query(&params)
             .await
             .expect("fetch failed");
-        let papers = parse_response(&xml).expect("parse failed");
+        let response = parse_response(&xml).expect("parse failed");
+        let papers = response.papers;
         assert!(!papers.is_empty(), "search returned no results");
         assert!(!papers[0].title.is_empty());
     }
@@ -259,7 +262,8 @@ mod tests {
         let client = make_client();
         let id = normalize_paper_id(ATTENTION_PAPER_ID).expect("normalize failed");
         let xml = client.fetch_arxiv_by_id(&id).await.expect("fetch failed");
-        let papers = parse_response(&xml).expect("parse failed");
+        let response = parse_response(&xml).expect("parse failed");
+        let papers = response.papers;
         assert_eq!(papers.len(), 1);
         assert!(
             papers[0].title.to_lowercase().contains("attention"),

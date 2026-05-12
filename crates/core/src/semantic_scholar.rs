@@ -55,6 +55,8 @@ fn ss_paper_to_paper(p: SsPaper) -> Paper {
         categories: Vec::new(),
         published: p.year.map(|y| y.to_string()).unwrap_or_default(),
         url,
+        doi: None,
+        journal_ref: None,
     }
 }
 

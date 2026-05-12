@@ -9,4 +9,6 @@ pub struct Paper {
     pub categories: Vec<String>,
     pub published: String,
     pub url: String,
+    pub doi: Option<String>,
+    pub journal_ref: Option<String>,
 }
