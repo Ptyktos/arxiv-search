@@ -4,6 +4,7 @@ use std::time::Duration;
 use anyhow::{Context as _, Result};
 use reqwest::Client;
 
+use crate::persistence::ArxivCache;
 use crate::rate_limit::TokioRateLimiter;
 use arxiv_search_rs_mcp_core::arxiv::QueryParams;
 use arxiv_search_rs_mcp_core::RateLimiter;
@@ -22,6 +23,7 @@ pub struct FetchClient {
     client: Client,
     rate_limiter: Arc<dyn RateLimiter>,
     ss_api_key: Option<String>,
+    cache: ArxivCache,
 }
 
 impl std::fmt::Debug for FetchClient {
@@ -37,7 +39,7 @@ impl FetchClient {
     /// # Errors
     ///
     /// Returns an error if the HTTP client fails to build.
-    pub fn new(ss_api_key: Option<String>) -> Result<Self> {
+    pub async fn new(ss_api_key: Option<String>) -> Result<Self> {
         let client = Client::builder()
             .user_agent(concat!(
                 "arxiv-search-rs-mcp/",
@@ -47,10 +49,12 @@ impl FetchClient {
             .timeout(Duration::from_secs(60))
             .build()
             .context("failed to build HTTP client")?;
+        let cache = ArxivCache::new().await?;
         Ok(Self {
             client,
             rate_limiter: Arc::new(TokioRateLimiter::new(ARXIV_RATE_LIMIT)),
             ss_api_key,
+            cache,
         })
     }
 
@@ -127,6 +131,11 @@ impl FetchClient {
     /// Returns an error if the HTTP request fails or the server returns a non-404 error status.
     /// Returns `Ok(None)` if the HTML version does not exist (404).
     pub async fn fetch_html(&self, paper_id: &str) -> Result<Option<String>> {
+        if let Some(cached) = self.cache.get_html(paper_id).await? {
+            tracing::info!("Cache hit for HTML: {}", paper_id);
+            return Ok(Some(cached));
+        }
+
         self.rate_limiter.wait().await;
         let url = format!("{ARXIV_HTML_BASE}/{paper_id}");
         let response = self
@@ -144,6 +153,8 @@ impl FetchClient {
             .text()
             .await
             .context("failed to read HTML response body")?;
+
+        self.cache.set_html(paper_id, &text).await?;
         Ok(Some(text))
     }
 
@@ -152,6 +163,11 @@ impl FetchClient {
     /// Returns an error if the HTTP request fails, the server returns an error status, or the
     /// response body cannot be read.
     pub async fn fetch_pdf(&self, paper_id: &str) -> Result<Vec<u8>> {
+        if let Some(cached) = self.cache.get_pdf(paper_id).await? {
+            tracing::info!("Cache hit for PDF: {}", paper_id);
+            return Ok(cached);
+        }
+
         self.rate_limiter.wait().await;
         let url = format!("{ARXIV_PDF_BASE}/{paper_id}");
         let bytes = self
@@ -165,7 +181,9 @@ impl FetchClient {
             .bytes()
             .await
             .context("failed to read PDF response body")?;
-        Ok(bytes.to_vec())
+        let bytes_vec = bytes.to_vec();
+        self.cache.set_pdf(paper_id, &bytes_vec).await?;
+        Ok(bytes_vec)
     }
 
     /// # Errors
@@ -227,15 +245,16 @@ mod tests {
 
     const ATTENTION_PAPER_ID: &str = "1706.03762";
 
-    fn make_client() -> FetchClient {
+    async fn make_client() -> FetchClient {
         FetchClient::new(std::env::var("SEMANTIC_SCHOLAR_API_KEY").ok())
+            .await
             .expect("failed to build test client")
     }
 
     #[tokio::test]
     #[ignore = "requires network"]
     async fn search_returns_results() {
-        let client = make_client();
+        let client = make_client().await;
         let params = build_query_params(
             "attention mechanism transformer",
             5,
@@ -259,7 +278,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires network"]
     async fn get_abstract_known_paper() {
-        let client = make_client();
+        let client = make_client().await;
         let id = normalize_paper_id(ATTENTION_PAPER_ID).expect("normalize failed");
         let xml = client.fetch_arxiv_by_id(&id).await.expect("fetch failed");
         let response = parse_response(&xml).expect("parse failed");
@@ -275,7 +294,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires network"]
     async fn download_paper_html_path() {
-        let client = make_client();
+        let client = make_client().await;
         let html = client.fetch_html("2303.08774").await.expect("fetch failed");
         assert!(
             html.is_some(),
@@ -288,7 +307,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires network"]
     async fn citations_returns_results() {
-        let client = make_client();
+        let client = make_client().await;
         let json = client
             .fetch_citations(ATTENTION_PAPER_ID, 5)
             .await
@@ -300,7 +319,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires network"]
     async fn recommendations_returns_results() {
-        let client = make_client();
+        let client = make_client().await;
         let json = client
             .fetch_recommendations(ATTENTION_PAPER_ID, 5)
             .await
