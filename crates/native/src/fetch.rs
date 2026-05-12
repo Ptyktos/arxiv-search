@@ -4,7 +4,7 @@ use std::time::Duration;
 use anyhow::{Context as _, Result};
 use reqwest::Client;
 
-use crate::persistence::ArxivCache;
+use crate::persistence::{ArxivCache, DEFAULT_CACHE_TTL};
 use crate::rate_limit::TokioRateLimiter;
 use arxiv_search_rs_mcp_core::arxiv::QueryParams;
 use arxiv_search_rs_mcp_core::RateLimiter;
@@ -52,7 +52,7 @@ impl FetchClient {
             .timeout(Duration::from_secs(60))
             .build()
             .context("failed to build HTTP client")?;
-        let cache = ArxivCache::new().await?;
+        let cache = ArxivCache::new(DEFAULT_CACHE_TTL).await?;
         Ok(Self {
             client,
             rate_limiter: Arc::new(TokioRateLimiter::new(ARXIV_RATE_LIMIT)),
