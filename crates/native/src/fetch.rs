@@ -14,7 +14,7 @@ const ARXIV_HTML_BASE: &str = "https://arxiv.org/html";
 const ARXIV_PDF_BASE: &str = "https://arxiv.org/pdf";
 const SS_API_BASE: &str = "https://api.semanticscholar.org/graph/v1";
 const SS_REC_BASE: &str = "https://api.semanticscholar.org/recommendations/v1";
-const ARXIV_RATE_LIMIT: Duration = Duration::from_secs(5);
+const ARXIV_RATE_LIMIT: Duration = Duration::from_millis(3140);
 const MAX_RETRIES: u32 = 5;
 const RETRY_BASE_MS: u64 = 5_000;
 /// Authenticated, rate-limited HTTP client for arXiv and Semantic Scholar.
