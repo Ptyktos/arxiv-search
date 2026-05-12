@@ -14,7 +14,7 @@ const ARXIV_PDF_BASE: &str = "https://arxiv.org/pdf";
 const SS_API_BASE: &str = "https://api.semanticscholar.org/graph/v1";
 const SS_REC_BASE: &str = "https://api.semanticscholar.org/recommendations/v1";
 const ARXIV_RATE_LIMIT: Duration = Duration::from_millis(3140);
-const MAX_RETRIES: u32 = 5;
+const MAX_RETRIES: u32 = 3;
 const RETRY_BASE_MS: u64 = 5_000;
 /// Authenticated, rate-limited HTTP client for arXiv and Semantic Scholar.
 ///
@@ -87,8 +87,9 @@ impl FetchClient {
     /// response body cannot be read. Retries transient 429/503 errors with exponential backoff.
     pub async fn fetch_arxiv_query(&self, params: &QueryParams) -> Result<String> {
         for attempt in 0..MAX_RETRIES {
+            tracing::info!("arXiv fetch attempt {}/{} for query", attempt + 1, MAX_RETRIES);
             self.rate_limiter.wait().await;
-            let response = self
+            let response_result = self
                 .client
                 .get(ARXIV_API_BASE)
                 .query(&[
@@ -99,8 +100,22 @@ impl FetchClient {
                     ("sortOrder", params.sort_order.as_str()),
                 ])
                 .send()
-                .await
-                .context("arXiv API request failed")?;
+                .await;
+
+            let response = match response_result {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::error!("arXiv API request failed on attempt {}: {:?}", attempt + 1, e);
+                    if attempt + 1 < MAX_RETRIES {
+                        let delay = RETRY_BASE_MS * 2u64.pow(attempt);
+                        tracing::info!("Retrying in {}ms due to request error", delay);
+                        tokio::time::sleep(Duration::from_millis(delay)).await;
+                        continue;
+                    }
+                    return Err(e).context("arXiv API request failed after retries");
+                }
+            };
+
             let status = response.status().as_u16();
             if status == 429 || status == 503 {
                 // Add jitter to delay: ±25%
@@ -116,9 +131,13 @@ impl FetchClient {
                 tokio::time::sleep(Duration::from_millis(delay)).await;
                 continue;
             }
+            if !response.status().is_success() {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                tracing::error!("arXiv API returned error status {}: {}", status, body);
+                anyhow::bail!("arXiv API returned error status {status}: {body}");
+            }
             return response
-                .error_for_status()
-                .context("arXiv API returned error status")?
                 .text()
                 .await
                 .context("failed to read arXiv response body");
