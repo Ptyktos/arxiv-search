@@ -2,6 +2,8 @@ mod fetch;
 mod persistence;
 mod rate_limit;
 mod tool;
+#[cfg(feature = "embedded-db")]
+pub mod db;
 
 use anyhow::{Context as _, Result};
 use clap::Parser;
