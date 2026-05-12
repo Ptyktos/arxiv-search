@@ -129,7 +129,7 @@ struct EntryBuilder {
     id: String,
     title: String,
     summary: String,
-    authors: Vec<String>,
+    authors: Vec<crate::paper::Author>,
     published: String,
     categories: Vec<String>,
     url: String,
@@ -184,6 +184,7 @@ pub fn parse_response(xml: &str) -> Result<ArxivResponse, ArxivError> {
         Title,
         Summary,
         AuthorName,
+        Affiliation,
         Published,
         Doi,
         JournalRef,
@@ -196,6 +197,7 @@ pub fn parse_response(xml: &str) -> Result<ArxivResponse, ArxivError> {
 
     let mut papers = Vec::new();
     let mut entry: Option<EntryBuilder> = None;
+    let mut current_author: Option<crate::paper::Author> = None;
     let mut field: Option<Field> = None;
     let mut total_results = 0;
     let mut start_index = 0;
@@ -205,10 +207,17 @@ pub fn parse_response(xml: &str) -> Result<ArxivResponse, ArxivError> {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) => match e.local_name().as_ref() {
                 b"entry" => entry = Some(EntryBuilder::default()),
+                b"author" if entry.is_some() => {
+                    current_author = Some(crate::paper::Author {
+                        name: String::new(),
+                        affiliations: Vec::new(),
+                    });
+                }
                 b"id" if entry.is_some() => field = Some(Field::Id),
                 b"title" if entry.is_some() => field = Some(Field::Title),
                 b"summary" if entry.is_some() => field = Some(Field::Summary),
-                b"name" if entry.is_some() => field = Some(Field::AuthorName),
+                b"name" if current_author.is_some() => field = Some(Field::AuthorName),
+                b"affiliation" if current_author.is_some() => field = Some(Field::Affiliation),
                 b"published" if entry.is_some() => field = Some(Field::Published),
                 b"doi" if entry.is_some() => field = Some(Field::Doi),
                 b"journal_ref" if entry.is_some() => field = Some(Field::JournalRef),
@@ -274,7 +283,16 @@ pub fn parse_response(xml: &str) -> Result<ArxivResponse, ArxivError> {
                                     Field::Id => b.id = text,
                                     Field::Title => b.title = text.trim().to_string(),
                                     Field::Summary => b.summary = text,
-                                    Field::AuthorName => b.authors.push(text),
+                                    Field::AuthorName => {
+                                        if let Some(ref mut a) = current_author {
+                                            a.name = text;
+                                        }
+                                    }
+                                    Field::Affiliation => {
+                                        if let Some(ref mut a) = current_author {
+                                            a.affiliations.push(text);
+                                        }
+                                    }
                                     Field::Published => b.published = text,
                                     Field::Doi => b.doi = Some(text),
                                     Field::JournalRef => b.journal_ref = Some(text),
@@ -288,7 +306,11 @@ pub fn parse_response(xml: &str) -> Result<ArxivResponse, ArxivError> {
             }
             Ok(Event::End(e)) => {
                 field = None;
-                if e.local_name().as_ref() == b"entry" {
+                if e.local_name().as_ref() == b"author" {
+                    if let (Some(ref mut b), Some(a)) = (entry.as_mut(), current_author.take()) {
+                        b.authors.push(a);
+                    }
+                } else if e.local_name().as_ref() == b"entry" {
                     if let Some(builder) = entry.take() {
                         papers.push(builder.into_paper()?);
                     }
@@ -429,7 +451,9 @@ mod tests {
         assert_eq!(p.id, "2103.12345");
         assert_eq!(p.title, "Test Paper Title");
         assert_eq!(p.abstract_text, "This is the abstract.");
-        assert_eq!(p.authors, vec!["Alice Smith", "Bob Jones"]);
+        assert_eq!(p.authors.len(), 2);
+        assert_eq!(p.authors[0].name, "Alice Smith");
+        assert_eq!(p.authors[1].name, "Bob Jones");
         assert_eq!(p.categories, vec!["cs.AI", "cs.LG"]);
         assert_eq!(p.published, "2021-03-23T00:00:00Z");
         assert_eq!(p.url, "https://arxiv.org/abs/2103.12345v1");
@@ -482,5 +506,33 @@ mod tests {
         let p = &response.papers[0];
         assert_eq!(p.doi, Some("10.1000/12345".to_string()));
         assert_eq!(p.journal_ref, Some("Nature 2021".to_string()));
+    }
+
+    #[test]
+    fn parse_author_affiliations() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
+  <entry>
+    <id>http://arxiv.org/abs/2103.12345v1</id>
+    <title>Affiliation Paper</title>
+    <summary>Abstract.</summary>
+    <author>
+      <name>Alice Smith</name>
+      <arxiv:affiliation>University of A</arxiv:affiliation>
+      <arxiv:affiliation>Institute of B</arxiv:affiliation>
+    </author>
+    <author>
+      <name>Bob Jones</name>
+    </author>
+    <published>2021-03-23T00:00:00Z</published>
+  </entry>
+</feed>"#;
+        let response = parse_response(xml).expect("XML with affiliations should parse");
+        let p = &response.papers[0];
+        assert_eq!(p.authors.len(), 2);
+        assert_eq!(p.authors[0].name, "Alice Smith");
+        assert_eq!(p.authors[0].affiliations, vec!["University of A", "Institute of B"]);
+        assert_eq!(p.authors[1].name, "Bob Jones");
+        assert!(p.authors[1].affiliations.is_empty());
     }
 }

@@ -50,7 +50,10 @@ fn ss_paper_to_paper(p: SsPaper) -> Paper {
     Paper {
         id,
         title: p.title,
-        authors: p.authors.into_iter().map(|a| a.name).collect(),
+        authors: p.authors.into_iter().map(|a| crate::paper::Author {
+            name: a.name,
+            affiliations: Vec::new(),
+        }).collect(),
         abstract_text: String::new(),
         categories: Vec::new(),
         published: p.year.map(|y| y.to_string()).unwrap_or_default(),
@@ -126,7 +129,7 @@ mod tests {
         let papers = parse_citations(CITATIONS_JSON).expect("citations JSON should parse");
         assert_eq!(papers.len(), 1);
         assert_eq!(papers[0].title, "Citing Paper One");
-        assert_eq!(papers[0].authors, vec!["Carol White"]);
+        assert_eq!(papers[0].authors[0].name, "Carol White");
         assert_eq!(papers[0].id, "2201.99999");
         assert_eq!(papers[0].published, "2022");
         assert_eq!(papers[0].url, "https://arxiv.org/abs/2201.99999");

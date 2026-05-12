@@ -343,7 +343,10 @@ mod tests {
         let paper = Paper {
             id: "1234.5678".into(),
             title: "Paper".into(),
-            authors: vec!["A".into()],
+            authors: vec![crate::paper::Author {
+                name: "A".into(),
+                affiliations: vec![],
+            }],
             abstract_text: "Abstract".into(),
             categories: vec![],
             published: "2024".into(),
