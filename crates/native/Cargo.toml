@@ -29,6 +29,10 @@ serde = { version = "1", features = ["derive"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 async-trait = "0.1.89"
 directories = "6"
+rusqlite = { version = "0.32", features = ["bundled"], optional = true }
+
+[features]
+embedded-db = ["dep:rusqlite"]
 
 [dev-dependencies]
 tempfile = "3"
