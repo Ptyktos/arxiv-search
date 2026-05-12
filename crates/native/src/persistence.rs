@@ -3,12 +3,23 @@ use directories::ProjectDirs;
 use std::path::PathBuf;
 use tokio::fs;
 
+/// A filesystem-based caching layer for arXiv HTML and PDF payloads.
+///
+/// This avoids redundant network fetches and bypasses the arXiv API rate limit
+/// by serving previously downloaded papers directly from the user's OS cache directory.
 #[derive(Debug, Clone)]
 pub struct ArxivCache {
     cache_dir: PathBuf,
 }
 
 impl ArxivCache {
+    /// Initializes a new cache instance.
+    ///
+    /// Determines the standard cache directory for the OS (e.g. `~/.cache/arxiv-search-mcp` on Linux)
+    /// and ensures that it exists.
+    ///
+    /// # Errors
+    /// Returns an error if the directory cannot be created.
     pub async fn new() -> Result<Self> {
         // Use standard OS cache directory to avoid littering the workspace
         let cache_dir = if let Some(proj_dirs) = ProjectDirs::from("org", "arxiv-search", "mcp") {
@@ -27,6 +38,10 @@ impl ArxivCache {
         Ok(Self { cache_dir })
     }
 
+    /// Attempts to retrieve a cached HTML payload for the given arXiv paper ID.
+    ///
+    /// # Errors
+    /// Returns an error if reading the file from disk fails.
     pub async fn get_html(&self, paper_id: &str) -> Result<Option<String>> {
         let path = self.cache_dir.join(format!("{paper_id}.html"));
         if path.exists() {
@@ -36,12 +51,20 @@ impl ArxivCache {
         Ok(None)
     }
 
+    /// Writes an HTML payload to the cache for the given arXiv paper ID.
+    ///
+    /// # Errors
+    /// Returns an error if writing to disk fails.
     pub async fn set_html(&self, paper_id: &str, content: &str) -> Result<()> {
         let path = self.cache_dir.join(format!("{paper_id}.html"));
         fs::write(path, content).await?;
         Ok(())
     }
 
+    /// Attempts to retrieve a cached PDF payload for the given arXiv paper ID.
+    ///
+    /// # Errors
+    /// Returns an error if reading the file from disk fails.
     pub async fn get_pdf(&self, paper_id: &str) -> Result<Option<Vec<u8>>> {
         let path = self.cache_dir.join(format!("{paper_id}.pdf"));
         if path.exists() {
@@ -51,6 +74,10 @@ impl ArxivCache {
         Ok(None)
     }
 
+    /// Writes a PDF payload to the cache for the given arXiv paper ID.
+    ///
+    /// # Errors
+    /// Returns an error if writing to disk fails.
     pub async fn set_pdf(&self, paper_id: &str, content: &[u8]) -> Result<()> {
         let path = self.cache_dir.join(format!("{paper_id}.pdf"));
         fs::write(path, content).await?;

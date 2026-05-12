@@ -198,12 +198,17 @@ fn default_chunk_overlap() -> usize {
     200
 }
 
+/// The main MCP server implementation for native desktop environments.
+///
+/// Encapsulates the `FetchClient` and routes all incoming tool calls
+/// (like `search` and `retrieve_paper`) to the corresponding underlying routines.
 #[derive(Debug, Clone)]
 pub struct ArxivServer {
     client: FetchClient,
 }
 
 impl ArxivServer {
+    /// Constructs a new `ArxivServer` with the provided HTTP client.
     #[must_use]
     pub fn new(client: FetchClient) -> Self {
         Self { client }
