@@ -114,6 +114,8 @@ pub fn hierarchical_chunk_text(
                     start_char: 0, // Simplified, actual offset calculation would be better
                     end_char: segment.text.len(),
                     text: segment.text.clone(),
+                    cluster_id: Some(cluster_idx.to_string()),
+                    parent_id: None,
                 });
                 embeddings.push(segment.embedding.clone());
             }
