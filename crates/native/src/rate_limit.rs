@@ -29,6 +29,7 @@ impl RateLimiter for TokioRateLimiter {
             let mut last = self.last_request.lock().await;
             let elapsed = last.map(|t| t.elapsed());
             *last = Some(Instant::now());
+            drop(last);
             elapsed.and_then(|e| self.delay.checked_sub(e))
         };
         if let Some(d) = sleep_duration {

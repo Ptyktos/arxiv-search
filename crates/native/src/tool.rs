@@ -154,7 +154,7 @@ struct SearchInput {
     sort: String,
 }
 
-fn default_n() -> u32 {
+const fn default_n() -> u32 {
     10
 }
 
@@ -186,15 +186,15 @@ struct RetrieveInput {
     chunk_overlap: usize,
 }
 
-fn default_true() -> bool {
+const fn default_true() -> bool {
     true
 }
 
-fn default_chunk_chars() -> usize {
+const fn default_chunk_chars() -> usize {
     4_000
 }
 
-fn default_chunk_overlap() -> usize {
+const fn default_chunk_overlap() -> usize {
     200
 }
 
@@ -210,10 +210,11 @@ pub struct ArxivServer {
 impl ArxivServer {
     /// Constructs a new `ArxivServer` with the provided HTTP client.
     #[must_use]
-    pub fn new(client: FetchClient) -> Self {
+    pub const fn new(client: FetchClient) -> Self {
         Self { client }
     }
 
+    #[expect(clippy::too_many_lines)]
     async fn run_operation(&self, op: Operation) -> Result<Value, rmcp::Error> {
         let id = normalize_paper_id(&op.id)
             .map_err(|e| rmcp::Error::invalid_params(e.to_string(), None))?;

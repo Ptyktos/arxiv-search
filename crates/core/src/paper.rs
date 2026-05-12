@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Represents an author of an arXiv paper, capturing both their name and
 /// any institutional affiliations extracted from the Atom metadata.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Author {
     /// The full name of the author.
     pub name: String,
@@ -14,7 +14,7 @@ pub struct Author {
 ///
 /// Contains core metadata extracted from either the arXiv API or Semantic Scholar
 /// API endpoints, ensuring a standardized schema for LLM context injection.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Paper {
     /// The unique arXiv ID (e.g. `1706.03762`).
     pub id: String,
@@ -24,7 +24,7 @@ pub struct Paper {
     pub authors: Vec<Author>,
     /// The abstract text.
     pub abstract_text: String,
-    /// ArXiv subject categories (e.g., `cs.AI`, `cs.LG`).
+    /// `ArXiv` subject categories (e.g., `cs.AI`, `cs.LG`).
     pub categories: Vec<String>,
     /// The publication timestamp (e.g., `2021-03-23T00:00:00Z`).
     pub published: String,

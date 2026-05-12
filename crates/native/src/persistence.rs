@@ -22,17 +22,18 @@ impl ArxivCache {
     /// Returns an error if the directory cannot be created.
     pub async fn new() -> Result<Self> {
         // Use standard OS cache directory to avoid littering the workspace
-        let cache_dir = if let Some(proj_dirs) = ProjectDirs::from("org", "arxiv-search", "mcp") {
-            proj_dirs.cache_dir().to_path_buf()
-        } else {
-            // Fallback to temp dir if standard paths are unavailable
-            std::env::temp_dir().join("arxiv-search-mcp")
-        };
+        let cache_dir = ProjectDirs::from("org", "arxiv-search", "mcp").map_or_else(
+            || std::env::temp_dir().join("arxiv-search-mcp"), // Fallback to temp dir if standard paths are unavailable
+            |proj_dirs| proj_dirs.cache_dir().to_path_buf(),
+        );
 
         if !cache_dir.exists() {
-            fs::create_dir_all(&cache_dir)
-                .await
-                .with_context(|| format!("Failed to create cache directory at {}", cache_dir.display()))?;
+            fs::create_dir_all(&cache_dir).await.with_context(|| {
+                format!(
+                    "Failed to create cache directory at {}",
+                    cache_dir.display()
+                )
+            })?;
         }
 
         Ok(Self { cache_dir })

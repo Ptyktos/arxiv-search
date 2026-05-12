@@ -178,6 +178,7 @@ fn extract_id_from_url(url: &str) -> String {
 /// # Errors
 ///
 /// Returns `ParseError` if XML is malformed or required fields are missing.
+#[expect(clippy::too_many_lines)]
 pub fn parse_response(xml: &str) -> Result<ArxivResponse, ArxivError> {
     #[derive(PartialEq)]
     enum Field {
