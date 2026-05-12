@@ -225,7 +225,7 @@ mod tests {
 
         let chunk_id = "chunk-1";
         let text = "This is a test chunk of text.";
-        let embedding = vec![0u8; 16];
+        let embedding = vec![0.0f32; 16];
 
         db.store_chunk(chunk_id, paper_id, text, Some(&embedding), Some("42"))?;
 

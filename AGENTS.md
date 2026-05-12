@@ -1,29 +1,34 @@
-# 🧠 AGENTS.md: arXiv-search MCP
+# 🧠 AGENTS.md: arXiv-search MCP — Architectural Blueprint & Operations Manual
 
 This server implements **Advanced RAG** (arXiv:2507.09935, arXiv:2603.26815). Follow these patterns for maximum efficacy.
 
-## 1. Tool Selection Strategy
-- **`search`**: Use for high-level discovery. Prefer specific field filters (`ti:`, `au:`, `cat:`) to reduce noise.
-- **`retrieve_paper`**: Use for deep reading. **Always** set `segmentation_k` (recommended: `1.2`) for complex papers to get hierarchical context.
-- **`hdrr`**: **The primary RAG tool.** Use this for question-answering over a set of papers. It performs two-stage document-level routing and scoped chunk retrieval.
-- **`execute`**: Use for metadata-only operations (citations, recommendations).
+**This document follows the rigor standard established across SanguineHost platforms (e.g., Lyrium Engine, Sanguine Scribe).**
 
-## 2. Token Efficiency
-- The server automatically prunes references and boilerplate.
-- Use `hdrr` with `limit_docs` (Stage 1) and `limit_chunks` (Stage 2) to prevent context window overflow.
-- Chunks carry **Hierarchical Metadata**. Pay attention to the `Context:` prefix; it represents the structural parent (e.g., Section Header) of the chunk.
+---
 
-## 3. Advanced RAG Patterns
-- **Multi-Paper Synthesis**: If answering across multiple papers, use `hdrr`. The stage-routed search ensures that the retrieval space is confined only to relevant documents identified in Stage 1.
-- **Context-Aware Retrieval**: When using `retrieve_paper`, the `cluster_id` and `parent_id` allow you to reconstruct the paper's logical structure if needed.
+## 0. The Prime Directive: Precise Retrieval
 
-## 4. Best Practices (Based on arXiv:2508.14704)
-- **Precise Parameterization**: Don't guess. Use the OpenAPI schema.
-- **Error Handling**: If a search returns no results, try broader terms before attempting `retrieve_paper`.
-- **Reasoning First**: Before calling a tool, think about whether you need a broad search or a scoped retrieval.
+The `arxiv-search` MCP is designed to extract maximum signal from scientific literature while minimizing token usage. **Do not hallucinate parameters or use brute-force search strategies.** Rely on the server's multi-stage retrieval pipelines (`hdrr`) and structural pruning mechanisms.
 
-## 5. Common Pitfalls
-- **`q` vs `query`**: The `search` and `hdrr` tools expect a `q` field. Many agents mistakenly use `query`. While the server now supports `query` as an alias, always prefer `q` for consistency with the OpenAPI spec.
-- **`paper_id` vs `id`**: The `retrieve_paper` tool expects `paper_id`. The server supports `id` as an alias, but `paper_id` is the primary key.
-- **Op selection**: In `execute`, ensure `op` is one of the allowed strings (e.g., `citations`, `recs`).
-- **Malformed JSON**: All tools take a single `code` string which must contain a valid JSON object. Do not pass parameters directly to the tool call; wrap them in the `code` string.
+**Key Architectural Difference from Basic RAG:**
+- **Hierarchical Metadata:** The server returns chunks with structural awareness (`cluster_id`, `parent_id`).
+- **Two-Stage Routing:** `hdrr` performs document-level routing before chunk retrieval to stay within context limits.
+
+---
+
+## 1. Blueprint Modules & The Swarm Mandate
+
+> [!IMPORTANT]
+> **MANDATORY READING:** AI agents are FORBIDDEN from guessing tool parameters or usage patterns. You MUST read the relevant modular documentation in `docs/agents/` before issuing requests to the MCP.
+
+- [**Tool Selection & Pitfalls**](docs/agents/tools.md) — The specific tools available (`search`, `retrieve_paper`, `hdrr`, `execute`), their appropriate use cases, and common parameter errors to avoid (e.g., `q` vs `query`).
+- [**Advanced RAG & Efficiency**](docs/agents/rag_patterns.md) — Token pruning, multi-paper synthesis strategies, context-aware retrieval, and empirical best practices for scientific literature extraction.
+
+---
+
+## 2. The Agentic Chain Workflow
+
+When interacting with the `arxiv-search` MCP, follow the established agentic chain:
+1. **Discover:** Use `search` with precise field filters (`ti:`, `au:`) to locate relevant document IDs.
+2. **Synthesize:** If answering a question across multiple papers, prioritize `hdrr` to prevent context overflow.
+3. **Deep Dive:** Only use `retrieve_paper` with `segmentation_k` when deep, hierarchical analysis of a *single* paper is required.

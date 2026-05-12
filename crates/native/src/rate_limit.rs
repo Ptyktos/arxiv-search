@@ -1,14 +1,18 @@
+use std::fs::OpenOptions;
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
+use fd_lock::RwLock;
 use tokio::sync::Mutex;
 
 use arxiv_search_rs_mcp_core::RateLimiter;
 
-/// A tokio-based rate limiter implementation.
+/// A tokio-based rate limiter implementation for in-process synchronization.
 pub struct TokioRateLimiter {
-    last_request: Arc<Mutex<Option<Instant>>>,
+    last_request: Arc<Mutex<Option<std::time::Instant>>>,
     delay: Duration,
 }
 
@@ -25,7 +29,7 @@ impl TokioRateLimiter {
 #[async_trait]
 impl RateLimiter for TokioRateLimiter {
     async fn wait(&self) {
-        let now = Instant::now();
+        let now = std::time::Instant::now();
         let sleep_duration = {
             let mut last = self.last_request.lock().await;
             let next_allowed = match *last {
@@ -43,5 +47,118 @@ impl RateLimiter for TokioRateLimiter {
         if let Some(d) = sleep_duration {
             tokio::time::sleep(d).await;
         }
+    }
+}
+
+/// A file-based rate limiter for cross-process synchronization.
+pub struct FileRateLimiter {
+    lock_file_path: PathBuf,
+    delay: Duration,
+}
+
+impl FileRateLimiter {
+    #[must_use]
+    pub fn new(cache_dir: PathBuf, delay: Duration) -> Self {
+        let lock_file_path = cache_dir.join("rate_limit.lock");
+        Self {
+            lock_file_path,
+            delay,
+        }
+    }
+
+    fn get_now_ms() -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64
+    }
+}
+
+#[async_trait]
+impl RateLimiter for FileRateLimiter {
+    async fn wait(&self) {
+        let lock_file_path = self.lock_file_path.clone();
+        let delay_ms = self.delay.as_millis() as u64;
+
+        // Step 1: Acquire lock and claim the next available slot
+        let sleep_ms = tokio::task::spawn_blocking(move || -> u64 {
+            let file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .open(&lock_file_path)
+                .expect("Failed to open rate limit lock file");
+
+            let mut lock = RwLock::new(file);
+            let mut guard = lock.write().expect("Failed to acquire write lock on rate limit file");
+
+            let now = Self::get_now_ms();
+            let mut content = String::new();
+            guard.read_to_string(&mut content).ok();
+            
+            let mut last_request = content.trim().parse::<u64>().unwrap_or(0);
+            
+            // Safety check: if last_request is too far in the future (e.g. clock skew), reset it.
+            // We allow up to 30 seconds into the future just in case.
+            if last_request > now + 30_000 {
+                tracing::warn!("Rate limit file has future timestamp ({}), resetting to now", last_request);
+                last_request = 0;
+            }
+
+            // Calculate the earliest time the next request can start.
+            let next_allowed_start = if last_request == 0 {
+                now
+            } else {
+                (last_request + delay_ms).max(now)
+            };
+            let sleep_ms = next_allowed_start - now;
+            
+            // Claim this slot
+            guard.set_len(0).expect("Failed to truncate rate limit file");
+            guard.seek(SeekFrom::Start(0)).expect("Failed to seek rate limit file");
+            guard.write_all(next_allowed_start.to_string().as_bytes()).expect("Failed to write to rate limit file");
+            
+            sleep_ms
+        }).await.expect("spawn_blocking failed");
+
+        // Step 2: Sleep if necessary outside of the lock
+        if sleep_ms > 0 {
+            tracing::info!("arXiv rate limit: serializing request, sleeping for {}ms", sleep_ms);
+            tokio::time::sleep(Duration::from_millis(sleep_ms)).await;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+    use std::time::Instant;
+
+    #[tokio::test]
+    async fn test_file_rate_limiter_serialization() {
+        let temp = tempdir().unwrap();
+        let cache_dir = temp.path().to_path_buf();
+        let delay = Duration::from_millis(100);
+        let _limiter = FileRateLimiter::new(cache_dir, delay);
+
+        let start = Instant::now();
+        
+        // Spawn 3 concurrent requests
+        let mut handles = vec![];
+        for _ in 0..3 {
+            let l = FileRateLimiter::new(temp.path().to_path_buf(), delay);
+            handles.push(tokio::spawn(async move {
+                l.wait().await;
+            }));
+        }
+
+        for h in handles {
+            h.await.unwrap();
+        }
+
+        let elapsed = start.elapsed();
+        // 3 requests with 100ms delay should take at least 200ms (0ms, 100ms, 200ms)
+        assert!(elapsed >= Duration::from_millis(200), "Should have taken at least 200ms, took {:?}", elapsed);
     }
 }

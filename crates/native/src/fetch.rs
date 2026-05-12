@@ -5,7 +5,6 @@ use anyhow::{Context as _, Result};
 use reqwest::Client;
 
 use crate::persistence::{ArxivCache, DEFAULT_CACHE_TTL};
-use crate::rate_limit::TokioRateLimiter;
 use arxiv_search_rs_mcp_core::arxiv::QueryParams;
 use arxiv_search_rs_mcp_core::RateLimiter;
 
@@ -71,7 +70,10 @@ impl FetchClient {
 
         Ok(Self {
             client,
-            rate_limiter: Arc::new(TokioRateLimiter::new(ARXIV_RATE_LIMIT)),
+            rate_limiter: Arc::new(crate::rate_limit::FileRateLimiter::new(
+                cache.get_cache_dir().clone(),
+                ARXIV_RATE_LIMIT,
+            )),
             ss_api_key,
             cache,
             #[cfg(feature = "embedded-db")]

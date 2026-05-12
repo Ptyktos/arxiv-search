@@ -542,4 +542,12 @@ mod tests {
         assert_eq!(p.authors[1].name, "Bob Jones");
         assert!(p.authors[1].affiliations.is_empty());
     }
+    #[test]
+    fn test_sanitize_lucene_query() {
+        assert_eq!(sanitize_lucene_query("attention*"), "attention\\*");
+        assert_eq!(sanitize_lucene_query("ti:attention"), "ti:attention");
+        assert_eq!(sanitize_lucene_query("all:\"deep learning\""), "all:\"deep learning\"");
+        assert_eq!(sanitize_lucene_query("1+1"), "1\\+1");
+        assert_eq!(sanitize_lucene_query("(A AND B)"), "\\(A AND B\\)");
+    }
 }

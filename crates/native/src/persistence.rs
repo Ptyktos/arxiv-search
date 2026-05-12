@@ -98,11 +98,19 @@ impl ArxivCache {
         Ok(())
     }
 
+    fn validate_id(paper_id: &str) -> Result<()> {
+        if paper_id.contains('/') || paper_id.contains('\\') || paper_id.contains("..") {
+            anyhow::bail!("Invalid paper ID: {}", paper_id);
+        }
+        Ok(())
+    }
+
     /// Attempts to retrieve a cached HTML payload for the given arXiv paper ID.
     ///
     /// # Errors
     /// Returns an error if reading the file from disk fails.
     pub async fn get_html(&self, paper_id: &str) -> Result<Option<String>> {
+        Self::validate_id(paper_id)?;
         let path = self.cache_dir.join(format!("{paper_id}.html"));
         if path.exists() {
             let content = fs::read_to_string(path).await?;
@@ -116,6 +124,7 @@ impl ArxivCache {
     /// # Errors
     /// Returns an error if writing to disk fails.
     pub async fn set_html(&self, paper_id: &str, content: &str) -> Result<()> {
+        Self::validate_id(paper_id)?;
         let path = self.cache_dir.join(format!("{paper_id}.html"));
         fs::write(path, content).await?;
         Ok(())
@@ -126,6 +135,7 @@ impl ArxivCache {
     /// # Errors
     /// Returns an error if reading the file from disk fails.
     pub async fn get_pdf(&self, paper_id: &str) -> Result<Option<Vec<u8>>> {
+        Self::validate_id(paper_id)?;
         let path = self.cache_dir.join(format!("{paper_id}.pdf"));
         if path.exists() {
             let content = fs::read(path).await?;
@@ -139,6 +149,7 @@ impl ArxivCache {
     /// # Errors
     /// Returns an error if writing to disk fails.
     pub async fn set_pdf(&self, paper_id: &str, content: &[u8]) -> Result<()> {
+        Self::validate_id(paper_id)?;
         let path = self.cache_dir.join(format!("{paper_id}.pdf"));
         fs::write(path, content).await?;
         Ok(())
@@ -149,6 +160,7 @@ impl ArxivCache {
     /// # Errors
     /// Returns an error if reading the file from disk fails.
     pub async fn get_metadata(&self, paper_id: &str) -> Result<Option<String>> {
+        Self::validate_id(paper_id)?;
         let path = self.cache_dir.join(format!("{paper_id}.xml"));
         if path.exists() {
             let content = fs::read_to_string(path).await?;
@@ -162,6 +174,7 @@ impl ArxivCache {
     /// # Errors
     /// Returns an error if writing to disk fails.
     pub async fn set_metadata(&self, paper_id: &str, content: &str) -> Result<()> {
+        Self::validate_id(paper_id)?;
         let path = self.cache_dir.join(format!("{paper_id}.xml"));
         fs::write(path, content).await?;
         Ok(())
@@ -275,6 +288,24 @@ mod tests {
             "New file should still exist"
         );
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_path_traversal_protection() -> Result<()> {
+        let temp = tempdir()?;
+        let cache = ArxivCache {
+            cache_dir: temp.path().to_path_buf(),
+            ttl_seconds: DEFAULT_CACHE_TTL,
+        };
+
+        let malicious_id = "../../etc/passwd";
+        assert!(cache.get_html(malicious_id).await.is_err());
+        assert!(cache.set_html(malicious_id, "test").await.is_err());
+        
+        let malicious_id_2 = "paper/../hidden";
+        assert!(cache.get_pdf(malicious_id_2).await.is_err());
+        
         Ok(())
     }
 }

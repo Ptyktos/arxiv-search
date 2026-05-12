@@ -174,7 +174,7 @@ const OPENAPI_URI: &str = "arxiv://openapi";
 struct SearchInput {
     #[serde(alias = "query")]
     q: String,
-    #[serde(default = "default_n")]
+    #[serde(alias = "n", alias = "max_results", default = "default_n")]
     n: u32,
     #[serde(default)]
     offset: u32,
@@ -523,6 +523,8 @@ impl ArxivServer {
     ) -> Result<CallToolResult, rmcp::Error> {
         let input: SearchInput = serde_json::from_str(&code)
             .map_err(|e| rmcp::Error::invalid_params(format!("invalid JSON: {e}"), None))?;
+        
+        tracing::info!("arXiv search: q='{}', n={}", input.q, input.n);
 
         let params = build_query_params(
             &input.q,
@@ -535,14 +537,20 @@ impl ArxivServer {
         )
         .map_err(|e| rmcp::Error::invalid_params(e.to_string(), None))?;
 
+        tracing::debug!("arXiv query params: {:?}", params.search_query);
+
         let xml = self
             .client
             .fetch_arxiv_query(&params)
             .await
             .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
 
+        tracing::info!("arXiv search: received {} bytes", xml.len());
+
         let response =
             parse_response(&xml).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+
+        tracing::info!("arXiv search: parsed {} papers", response.papers.len());
 
         let out = serde_json::to_string_pretty(&response)
             .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
