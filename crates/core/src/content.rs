@@ -28,6 +28,8 @@ pub struct PaperChunk {
     pub start_char: usize,
     pub end_char: usize,
     pub text: String,
+    pub cluster_id: Option<String>,
+    pub parent_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -143,6 +145,8 @@ pub fn chunk_text(text: &str, chunk_chars: usize, chunk_overlap: usize) -> Vec<P
                     start_char: start,
                     end_char: end,
                     text: part.clone(),
+                    cluster_id: None,
+                    parent_id: None,
                 });
                 cursor = end.saturating_sub(chunk_overlap.min(end));
             }
@@ -189,6 +193,8 @@ fn push_chunk(chunks: &mut Vec<PaperChunk>, text: &str, start_char: usize) {
         start_char,
         end_char,
         text: text.to_string(),
+        cluster_id: None,
+        parent_id: None,
     });
 }
 
