@@ -172,6 +172,7 @@ const OPENAPI_URI: &str = "arxiv://openapi";
 
 #[derive(Debug, Deserialize)]
 struct SearchInput {
+    #[serde(alias = "query")]
     q: String,
     #[serde(default = "default_n")]
     n: u32,
@@ -196,6 +197,7 @@ fn default_sort() -> String {
 #[derive(Debug, Deserialize)]
 struct Operation {
     op: String,
+    #[serde(alias = "paper_id")]
     id: String,
     limit: Option<u32>,
     #[serde(default = "default_true")]
@@ -209,6 +211,7 @@ struct Operation {
 
 #[derive(Debug, Deserialize)]
 struct RetrieveInput {
+    #[serde(alias = "id", alias = "arxiv_id")]
     paper_id: String,
     #[serde(default = "default_true")]
     prune_references: bool,
@@ -220,7 +223,9 @@ struct RetrieveInput {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct HdrrInput {
+    #[serde(alias = "query")]
     q: String,
     #[serde(default = "default_limit_docs")]
     limit_docs: usize,
@@ -467,7 +472,7 @@ impl ArxivServer {
         serde_json::to_value(prepared).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))
     }
 
-    fn run_hdrr(&self, input: &HdrrInput) -> Result<Value, rmcp::Error> {
+    fn run_hdrr(&self, _input: &HdrrInput) -> Result<Value, rmcp::Error> {
         #[cfg(not(feature = "embedded-db"))]
         return Err(rmcp::Error::internal_error("embedded-db feature not enabled", None));
 
@@ -477,12 +482,12 @@ impl ArxivServer {
                 .ok_or_else(|| rmcp::Error::internal_error("Database not initialized", None))?;
 
             // Stage 1: Document-level routing P(D|q)
-            let routed_docs = db.route_documents(&input.q, input.limit_docs)
+            let routed_docs = db.route_documents(&_input.q, _input.limit_docs)
                 .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
 
             if routed_docs.is_empty() {
                 return Ok(serde_json::json!({
-                    "query": input.q,
+                    "query": _input.q,
                     "routed_documents": [],
                     "chunks": [],
                     "message": "No documents routed in Stage 1."
@@ -491,13 +496,13 @@ impl ArxivServer {
 
             // Stage 2: Scoped chunk retrieval P(c|q, D)
             // Note: hierarchical segmentation (segmentation_k) is handled during ingestion.
-            let _ = input.segmentation_k; 
+            let _ = _input.segmentation_k; 
 
-            let chunks = db.retrieve_chunks_scoped(&input.q, &routed_docs, input.limit_chunks)
+            let chunks = db.retrieve_chunks_scoped(&_input.q, &routed_docs, _input.limit_chunks)
                 .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
 
             Ok(serde_json::json!({
-                "query": input.q,
+                "query": _input.q,
                 "routed_documents": routed_docs,
                 "chunks": chunks.into_iter().map(|(id, text)| {
                     serde_json::json!({ "id": id, "text": text })
@@ -513,7 +518,7 @@ impl ArxivServer {
     async fn search(
         &self,
         #[tool(param)]
-        #[schemars(description = "JSON object per arxiv://openapi /search schema.")]
+        #[schemars(description = "JSON object with query string 'q' (or 'query'). See arxiv://openapi for full schema.")]
         code: String,
     ) -> Result<CallToolResult, rmcp::Error> {
         let input: SearchInput = serde_json::from_str(&code)
@@ -545,13 +550,14 @@ impl ArxivServer {
         Ok(CallToolResult::success(vec![Content::text(out)]))
     }
 
+    #[tool(
         description = "Get paper content, pruned and chunked. Supports hierarchical segmentation (segmentation_k)."
     )]
     async fn retrieve_paper(
         &self,
         #[tool(param)]
         #[schemars(
-            description = "JSON object with paper_id, prune_references, chunk_chars, and chunk_overlap."
+            description = "JSON object with 'paper_id' (or 'id'). See arxiv://openapi for full schema."
         )]
         code: String,
     ) -> Result<CallToolResult, rmcp::Error> {
@@ -563,12 +569,13 @@ impl ArxivServer {
         Ok(CallToolResult::success(vec![Content::text(out)]))
     }
 
+    #[tool(
         description = "Hybrid Document-Routed Retrieval (HDRR). Two-stage: 1. Route docs, 2. Scoped chunk search."
     )]
     async fn hdrr(
         &self,
         #[tool(param)]
-        #[schemars(description = "JSON object with q, limit_docs, limit_chunks.")]
+        #[schemars(description = "JSON object with query string 'q' (or 'query'). See arxiv://openapi for full schema.")]
         code: String,
     ) -> Result<CallToolResult, rmcp::Error> {
         let input: HdrrInput = serde_json::from_str(&code)
@@ -584,13 +591,14 @@ impl ArxivServer {
         Ok(CallToolResult::success(vec![Content::text(out)]))
     }
 
+    #[tool(
         description = "Batch fetch: abstracts, full text, citations, or recommendations."
     )]
     async fn execute(
         &self,
         #[tool(param)]
         #[schemars(
-            description = "JSON Operation or array of Operations per arxiv://openapi /execute schema."
+            description = "JSON Operation with 'id' and 'op'. See arxiv://openapi for full schema."
         )]
         code: String,
     ) -> Result<CallToolResult, rmcp::Error> {

@@ -21,3 +21,9 @@ This server implements **Advanced RAG** (arXiv:2507.09935, arXiv:2603.26815). Fo
 - **Precise Parameterization**: Don't guess. Use the OpenAPI schema.
 - **Error Handling**: If a search returns no results, try broader terms before attempting `retrieve_paper`.
 - **Reasoning First**: Before calling a tool, think about whether you need a broad search or a scoped retrieval.
+
+## 5. Common Pitfalls
+- **`q` vs `query`**: The `search` and `hdrr` tools expect a `q` field. Many agents mistakenly use `query`. While the server now supports `query` as an alias, always prefer `q` for consistency with the OpenAPI spec.
+- **`paper_id` vs `id`**: The `retrieve_paper` tool expects `paper_id`. The server supports `id` as an alias, but `paper_id` is the primary key.
+- **Op selection**: In `execute`, ensure `op` is one of the allowed strings (e.g., `citations`, `recs`).
+- **Malformed JSON**: All tools take a single `code` string which must contain a valid JSON object. Do not pass parameters directly to the tool call; wrap them in the `code` string.

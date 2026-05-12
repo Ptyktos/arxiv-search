@@ -25,13 +25,21 @@ impl TokioRateLimiter {
 #[async_trait]
 impl RateLimiter for TokioRateLimiter {
     async fn wait(&self) {
+        let now = Instant::now();
         let sleep_duration = {
             let mut last = self.last_request.lock().await;
-            let elapsed = last.map(|t| t.elapsed());
-            *last = Some(Instant::now());
-            drop(last);
-            elapsed.and_then(|e| self.delay.checked_sub(e))
+            let next_allowed = match *last {
+                Some(t) => (t + self.delay).max(now),
+                None => now,
+            };
+            *last = Some(next_allowed);
+            if next_allowed > now {
+                Some(next_allowed - now)
+            } else {
+                None
+            }
         };
+
         if let Some(d) = sleep_duration {
             tokio::time::sleep(d).await;
         }

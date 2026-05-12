@@ -144,6 +144,29 @@ impl ArxivCache {
         Ok(())
     }
 
+    /// Attempts to retrieve a cached XML metadata payload for the given arXiv paper ID.
+    ///
+    /// # Errors
+    /// Returns an error if reading the file from disk fails.
+    pub async fn get_metadata(&self, paper_id: &str) -> Result<Option<String>> {
+        let path = self.cache_dir.join(format!("{paper_id}.xml"));
+        if path.exists() {
+            let content = fs::read_to_string(path).await?;
+            return Ok(Some(content));
+        }
+        Ok(None)
+    }
+
+    /// Writes an XML metadata payload to the cache for the given arXiv paper ID.
+    ///
+    /// # Errors
+    /// Returns an error if writing to disk fails.
+    pub async fn set_metadata(&self, paper_id: &str, content: &str) -> Result<()> {
+        let path = self.cache_dir.join(format!("{paper_id}.xml"));
+        fs::write(path, content).await?;
+        Ok(())
+    }
+
     /// Returns the path to the cache directory.
     #[must_use]
     pub const fn get_cache_dir(&self) -> &std::path::PathBuf {

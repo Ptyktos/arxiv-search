@@ -14,9 +14,9 @@ const ARXIV_HTML_BASE: &str = "https://arxiv.org/html";
 const ARXIV_PDF_BASE: &str = "https://arxiv.org/pdf";
 const SS_API_BASE: &str = "https://api.semanticscholar.org/graph/v1";
 const SS_REC_BASE: &str = "https://api.semanticscholar.org/recommendations/v1";
-const ARXIV_RATE_LIMIT: Duration = Duration::from_secs(3);
-const MAX_RETRIES: u32 = 3;
-const RETRY_BASE_MS: u64 = 3_000;
+const ARXIV_RATE_LIMIT: Duration = Duration::from_secs(5);
+const MAX_RETRIES: u32 = 5;
+const RETRY_BASE_MS: u64 = 5_000;
 /// Authenticated, rate-limited HTTP client for arXiv and Semantic Scholar.
 ///
 /// Manages synchronization with a global rate limiter and an asynchronous cache.
@@ -50,7 +50,7 @@ impl FetchClient {
             .user_agent(concat!(
                 "arxiv-search-rs-mcp/",
                 env!("CARGO_PKG_VERSION"),
-                " (Rust MCP server)"
+                " (contact: https://github.com/sanguinehost/arxiv-search)"
             ))
             .timeout(Duration::from_secs(60))
             .build()
@@ -101,7 +101,11 @@ impl FetchClient {
                 .context("arXiv API request failed")?;
             let status = response.status().as_u16();
             if status == 429 || status == 503 {
-                let delay = RETRY_BASE_MS * 2u64.pow(attempt);
+                // Add jitter to delay: ±25%
+                let base_delay = RETRY_BASE_MS * 2u64.pow(attempt);
+                let jitter = (base_delay as f64 * (rand::random::<f64>() * 0.5 - 0.25)) as i64;
+                let delay = (base_delay as i64 + jitter).max(1000) as u64;
+
                 tracing::warn!(
                     "arXiv returned {status}, retrying in {delay}ms (attempt {}/{})",
                     attempt + 1,
@@ -125,6 +129,11 @@ impl FetchClient {
     /// Returns an error if the HTTP request fails, the server returns an error status, or the
     /// response body cannot be read. Retries transient 429/503 errors with exponential backoff.
     pub async fn fetch_arxiv_by_id(&self, paper_id: &str) -> Result<String> {
+        if let Some(cached) = self.cache.get_metadata(paper_id).await? {
+            tracing::info!("Cache hit for metadata: {}", paper_id);
+            return Ok(cached);
+        }
+
         for attempt in 0..MAX_RETRIES {
             self.rate_limiter.wait().await;
             let response = self
@@ -136,17 +145,23 @@ impl FetchClient {
                 .context("arXiv ID lookup request failed")?;
             let status = response.status().as_u16();
             if status == 429 || status == 503 {
-                let delay = RETRY_BASE_MS * 2u64.pow(attempt);
+                let base_delay = RETRY_BASE_MS * 2u64.pow(attempt);
+                let jitter = (base_delay as f64 * (rand::random::<f64>() * 0.5 - 0.25)) as i64;
+                let delay = (base_delay as i64 + jitter).max(1000) as u64;
+
                 tracing::warn!("arXiv returned {status} for id {paper_id}, retrying in {delay}ms (attempt {}/{})", attempt + 1, MAX_RETRIES);
                 tokio::time::sleep(Duration::from_millis(delay)).await;
                 continue;
             }
-            return response
+            let text = response
                 .error_for_status()
                 .context("arXiv API returned error status")?
                 .text()
                 .await
-                .context("failed to read arXiv response body");
+                .context("failed to read arXiv response body")?;
+
+            let _ = self.cache.set_metadata(paper_id, &text).await;
+            return Ok(text);
         }
         anyhow::bail!("arXiv ID lookup failed after {MAX_RETRIES} retries (429/503)")
     }
