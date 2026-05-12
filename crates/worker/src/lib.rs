@@ -12,18 +12,40 @@ use arxiv_search_rs_mcp_core::{
 const ARXIV_API_BASE: &str = "https://export.arxiv.org/api/query";
 const ARXIV_HTML_BASE: &str = "https://arxiv.org/html";
 
-struct WorkerRateLimiter;
+use std::sync::Mutex;
+use std::time::Duration;
 
-#[async_trait]
+struct WorkerRateLimiter {
+    last_request: Mutex<Option<u64>>,
+}
+
+#[async_trait(?Send)]
 impl RateLimiter for WorkerRateLimiter {
     async fn wait(&self) {
-        // Stub: In a stateless worker, we don't track across requests yet.
-        // If we needed to, we'd use Durable Objects.
+        let now = worker::Date::now().as_millis();
+        let sleep_duration = {
+            let mut last = self.last_request.lock().unwrap();
+            let mut to_sleep = 0;
+            if let Some(last_time) = *last {
+                let elapsed = now.saturating_sub(last_time);
+                if elapsed < 3000 {
+                    to_sleep = 3000 - elapsed;
+                }
+            }
+            *last = Some(now + to_sleep);
+            to_sleep
+        };
+
+        if sleep_duration > 0 {
+            let _ = worker::Delay::from(Duration::from_millis(sleep_duration)).await;
+        }
     }
 }
 
 lazy_static::lazy_static! {
-    static ref RATE_LIMITER: WorkerRateLimiter = WorkerRateLimiter;
+    static ref RATE_LIMITER: WorkerRateLimiter = WorkerRateLimiter {
+        last_request: Mutex::new(None),
+    };
 }
 
 #[derive(Deserialize)]

@@ -1,7 +1,7 @@
-use async_trait::async_trait;
 
 /// A trait for enforcing rate limits on API requests.
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait RateLimiter: Send + Sync {
     /// Wait until the rate limit allows the next request.
     async fn wait(&self);
@@ -11,7 +11,8 @@ pub trait RateLimiter: Send + Sync {
 /// or not possible.
 pub struct NoopRateLimiter;
 
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl RateLimiter for NoopRateLimiter {
     async fn wait(&self) {}
 }
