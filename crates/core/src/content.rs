@@ -5,11 +5,13 @@ use crate::paper::Paper;
 const DEFAULT_CHUNK_CHARS: usize = 4_000;
 const DEFAULT_CHUNK_OVERLAP: usize = 200;
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PreparationOptions {
     pub prune_references: bool,
     pub chunk_chars: usize,
     pub chunk_overlap: usize,
+    /// If Some, use hierarchical segmentation with the given k parameter.
+    pub segmentation_k: Option<f32>,
 }
 
 impl Default for PreparationOptions {
@@ -18,6 +20,7 @@ impl Default for PreparationOptions {
             prune_references: true,
             chunk_chars: DEFAULT_CHUNK_CHARS,
             chunk_overlap: DEFAULT_CHUNK_OVERLAP,
+            segmentation_k: None,
         }
     }
 }
@@ -30,13 +33,25 @@ pub struct PaperChunk {
     pub text: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HierarchicalPaperChunk {
+    pub index: usize,
+    pub start_char: usize,
+    pub end_char: usize,
+    pub text: String,
+    pub segments: Vec<PaperChunk>,
+    /// Mean-pooled embedding of the segments in this cluster.
+    pub cluster_embedding: Vec<f32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PreparedPaper {
     pub paper: Paper,
     pub source: String,
     pub raw_markdown: String,
     pub pruned_markdown: String,
     pub chunks: Vec<PaperChunk>,
+    pub hierarchical_chunks: Option<Vec<HierarchicalPaperChunk>>,
 }
 
 #[must_use]
@@ -62,7 +77,74 @@ pub fn prepare_paper(
         raw_markdown,
         pruned_markdown,
         chunks,
+        hierarchical_chunks: None,
     }
+}
+
+/// Performs hierarchical chunking given segments and their embeddings.
+#[must_use]
+pub fn hierarchical_chunk_text(
+    segments: &[crate::segmentation::Segment],
+    k: f32,
+) -> Vec<HierarchicalPaperChunk> {
+    use crate::segmentation::{HierarchicalSegmenter, ClusteringOptions};
+
+    let segmenter = HierarchicalSegmenter::new(ClusteringOptions { k });
+    let clusters = segmenter.cluster(segments);
+
+    clusters
+        .into_iter()
+        .enumerate()
+        .map(|(cluster_idx, segment_indices)| {
+            let mut cluster_text = String::new();
+            let mut cluster_segments = Vec::new();
+            let mut embeddings = Vec::new();
+
+            for (i, &seg_idx) in segment_indices.iter().enumerate() {
+                let segment = &segments[seg_idx];
+                if i > 0 {
+                    cluster_text.push_str("\n\n");
+                }
+                cluster_text.push_str(&segment.text);
+                
+                cluster_segments.push(PaperChunk {
+                    index: i,
+                    start_char: 0, // Simplified, actual offset calculation would be better
+                    end_char: segment.text.len(),
+                    text: segment.text.clone(),
+                });
+                embeddings.push(segment.embedding.clone());
+            }
+
+            // Mean pooling for cluster embedding
+            let cluster_embedding = if embeddings.is_empty() {
+                Vec::new()
+            } else {
+                let dim = embeddings[0].len();
+                let mut mean = vec![0.0f32; dim];
+                for e in &embeddings {
+                    for (m, &v) in mean.iter_mut().zip(e) {
+                        *m += v;
+                    }
+                }
+                #[expect(clippy::cast_precision_loss)]
+                let count = embeddings.len() as f32;
+                for m in &mut mean {
+                    *m /= count;
+                }
+                mean
+            };
+
+            HierarchicalPaperChunk {
+                index: cluster_idx,
+                start_char: 0, // Placeholder
+                end_char: 0,   // Placeholder
+                text: cluster_text,
+                segments: cluster_segments,
+                cluster_embedding,
+            }
+        })
+        .collect()
 }
 
 #[must_use]

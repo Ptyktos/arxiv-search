@@ -4,6 +4,7 @@ pub mod error;
 pub mod html;
 pub mod paper;
 pub mod rate_limit;
+pub mod segmentation;
 pub mod semantic_scholar;
 
 pub use rate_limit::{NoopRateLimiter, RateLimiter};

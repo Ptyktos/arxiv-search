@@ -135,6 +135,9 @@ components:
         chunk_overlap:
           type: integer
           default: 200
+        segmentation_k:
+          type: number
+          description: "Sensitivity for hierarchical segmentation (e.g., 1.2 for 512 tokens). If set, enables hierarchical chunking."
 "#;
 
 const OPENAPI_URI: &str = "arxiv://openapi";
@@ -173,6 +176,7 @@ struct Operation {
     chunk_chars: usize,
     #[serde(default = "default_chunk_overlap")]
     chunk_overlap: usize,
+    pub segmentation_k: Option<f32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -184,6 +188,7 @@ struct RetrieveInput {
     chunk_chars: usize,
     #[serde(default = "default_chunk_overlap")]
     chunk_overlap: usize,
+    pub segmentation_k: Option<f32>,
 }
 
 const fn default_true() -> bool {
@@ -320,6 +325,7 @@ impl ArxivServer {
                         prune_references: op.prune_references,
                         chunk_chars: op.chunk_chars,
                         chunk_overlap: op.chunk_overlap,
+                        segmentation_k: op.segmentation_k,
                     },
                 );
 
@@ -377,6 +383,7 @@ impl ArxivServer {
                 prune_references: input.prune_references,
                 chunk_chars: input.chunk_chars,
                 chunk_overlap: input.chunk_overlap,
+                segmentation_k: input.segmentation_k,
             },
         );
 
