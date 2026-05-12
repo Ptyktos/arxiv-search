@@ -1,16 +1,10 @@
-mod fetch;
-mod persistence;
-mod rate_limit;
-mod tool;
-#[cfg(feature = "embedded-db")]
-pub mod db;
-
 use anyhow::{Context as _, Result};
 use clap::Parser;
 use rmcp::ServiceExt as _;
 
-use fetch::FetchClient;
-use tool::ArxivServer;
+use arxiv_search_rs_mcp_native::fetch::FetchClient;
+use arxiv_search_rs_mcp_native::tool::ArxivServer;
+
 
 #[derive(Parser)]
 #[command(

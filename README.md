@@ -8,12 +8,11 @@ Rust MCP server for arXiv search and paper retrieval. The repository exposes sev
 
 The main retrieval flow is designed for LLM ingestion: retrieve paper content directly from arXiv, prune noise, then chunk before handing it downstream.
 
-## Features
+- **Advanced RAG Engine:** Implements hierarchical text segmentation (arXiv:2507.09935) and Hybrid Document-Routed Retrieval (HDRR, arXiv:2603.26815) for high-precision retrieval.
+- **Embedded Database:** Optional `rusqlite` backend for document and chunk indexing, enabling stage-routed searches and cross-document synthesis.
+- **Cache TTL:** Automatic pruning of stale cache files to manage disk usage.
+- **Native OS Caching:** Employs an asynchronous persistence layer (`~/.arxiv_cache`) to cache fetched HTML/PDFs and bypass HTTP overhead entirely.
 
-- **Strict Rate-Limiting:** Adheres to arXiv's ToS via cross-platform trait bounds and stateful `tokio`/`worker` mutexes, ensuring no more than one request per 3 seconds.
-- **Robust OpenSearch Pagination:** Extracts full OpenSearch metadata (`totalResults`, `startIndex`) and supports paginated queries via the `offset` parameter.
-- **Extended Metadata Extraction:** Intelligently captures rich semantic data including `doi`, `journal_ref`, and nested institutional `affiliations` for each author.
-- **Native OS Caching:** Employs an asynchronous persistence layer (`~/.cache/arxiv-search-mcp`) on `native` targets to cache fetched HTML/PDFs and bypass HTTP overhead entirely on subsequent requests.
 
 ## Tools
 
@@ -47,6 +46,8 @@ Retrieve a paper directly from arXiv content URLs, prune it, and chunk it for mo
 | `prune_references` | bool | `true` | Drops trailing references/bibliography noise |
 | `chunk_chars` | integer | `4000` | Target chunk size |
 | `chunk_overlap` | integer | `200` | Overlap between chunks |
+| `segmentation_k` | float | - | Optional. If set, uses hierarchical segmentation with the given sensitivity parameter. |
+
 
 The response is structured JSON with:
 
@@ -56,14 +57,16 @@ The response is structured JSON with:
 - pruned markdown
 - chunk list
 
-### `execute`
-Legacy batch path kept for compatibility. It still supports:
+### `hdrr`
+Hybrid Document-Routed Retrieval. Two-stage retrieval that first routes to relevant documents and then performs scoped chunk searches.
 
-- `abstract`
-- `download`
-- `citations`
-- `recs`
-- `retrieve`
+```json
+{"q":"transformer scaling laws","limit_docs":5,"limit_chunks":10}
+```
+
+### `execute`
+Batch fetch abstracts, full text, citations, or recommendations.
+
 
 ## Local usage
 

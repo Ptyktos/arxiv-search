@@ -300,7 +300,7 @@ mod tests {
         let expected_sigma = ((s23 - expected_mu).mul_add(s23 - expected_mu, (s12 - expected_mu).mul_add(s12 - expected_mu, (s13 - expected_mu).powi(2))) / 3.0).sqrt();
         
         let segmenter = HierarchicalSegmenter::new(ClusteringOptions { k: 1.2 });
-        let (mu, sigma) = compute_stats(&segments);
+        let (mu, sigma) = segmenter.compute_stats(&segments);
         
         assert!((mu - expected_mu).abs() < 1e-6, "Mean mismatch: {mu} != {expected_mu}");
         assert!((sigma - expected_sigma).abs() < 1e-6, "StdDev mismatch: {sigma} != {expected_sigma}");

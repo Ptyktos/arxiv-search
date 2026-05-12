@@ -9,6 +9,11 @@ description = "arXiv search MCP server"
 name = "arxiv-search-mcp"
 path = "src/main.rs"
 
+[lib]
+name = "arxiv_search_rs_mcp_native"
+path = "src/lib.rs"
+
+
 [lints]
 workspace = true
 

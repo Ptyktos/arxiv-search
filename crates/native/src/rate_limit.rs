@@ -13,7 +13,7 @@ pub struct TokioRateLimiter {
 }
 
 impl TokioRateLimiter {
-    /// Create a new rate limiter with the specified delay between requests.
+    #[must_use]
     pub fn new(delay: Duration) -> Self {
         Self {
             last_request: Arc::new(Mutex::new(None)),

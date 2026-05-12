@@ -509,7 +509,7 @@ impl ArxivServer {
 
 #[tool(tool_box)]
 impl ArxivServer {
-    #[tool(description = "Search arXiv papers. JSON input — schema at arxiv://openapi.")]
+    #[tool(description = "Search arXiv papers with filters (categories, dates, sorting).")]
     async fn search(
         &self,
         #[tool(param)]
@@ -545,9 +545,7 @@ impl ArxivServer {
         Ok(CallToolResult::success(vec![Content::text(out)]))
     }
 
-    #[tool(
-        description = "Retrieve, prune, and chunk a paper into LLM-ready content. \
-        JSON input — schema at arxiv://openapi."
+        description = "Get paper content, pruned and chunked. Supports hierarchical segmentation (segmentation_k)."
     )]
     async fn retrieve_paper(
         &self,
@@ -565,9 +563,7 @@ impl ArxivServer {
         Ok(CallToolResult::success(vec![Content::text(out)]))
     }
 
-    #[tool(
-        description = "Hybrid Document-Routed Retrieval (arXiv:2603.26815). \
-        Two-stage: 1. Route docs, 2. Scoped chunk search."
+        description = "Hybrid Document-Routed Retrieval (HDRR). Two-stage: 1. Route docs, 2. Scoped chunk search."
     )]
     async fn hdrr(
         &self,
@@ -588,9 +584,7 @@ impl ArxivServer {
         Ok(CallToolResult::success(vec![Content::text(out)]))
     }
 
-    #[tool(
-        description = "Fetch abstract, full text, citations, or recommendations. \
-        JSON input — schema at arxiv://openapi. Pass an array for batching."
+        description = "Batch fetch: abstracts, full text, citations, or recommendations."
     )]
     async fn execute(
         &self,

@@ -82,19 +82,29 @@ impl Database {
         id: &str,
         paper_id: &str,
         text: &str,
-        embedding: Option<&[u8]>,
+        embedding: Option<&[f32]>,
         cluster_id: Option<&str>,
     ) -> Result<()> {
         let conn = self.conn.lock().map_err(|_| anyhow!("Failed to lock database"))?;
+        
+        let emb_blob = embedding.map(|e| {
+            let mut bytes = Vec::with_capacity(e.len() * 4);
+            for &val in e {
+                bytes.extend_from_slice(&val.to_le_bytes());
+            }
+            bytes
+        });
+
         conn.execute(
             "INSERT OR REPLACE INTO chunks (id, paper_id, text, embedding_blob, cluster_id) 
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![id, paper_id, text, embedding, cluster_id],
+            params![id, paper_id, text, emb_blob, cluster_id],
         )
         .context("Failed to insert chunk")?;
         drop(conn);
         Ok(())
     }
+
 
     /// Stage 1: Document-level routing P(D|q).
     /// Filters the corpus for whole documents relevant to the query.
@@ -117,7 +127,8 @@ impl Database {
         Ok(doc_ids)
     }
 
-    /// Stage 2: Scoped chunk retrieval P(c|q, D).
+    /// Stage 2: Scoped chunk retrieval.
+    ///
     /// Confines search to chunks exclusively within the document subset.
     ///
     /// # Errors

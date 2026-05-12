@@ -17,9 +17,10 @@ const SS_REC_BASE: &str = "https://api.semanticscholar.org/recommendations/v1";
 const ARXIV_RATE_LIMIT: Duration = Duration::from_secs(3);
 const MAX_RETRIES: u32 = 3;
 const RETRY_BASE_MS: u64 = 3_000;
-/// The primary client for making authenticated, rate-limited HTTP requests to arXiv
-/// and Semantic Scholar APIs. In the native context, this client is strictly
-/// synchronized with a global `TokioRateLimiter` and an asynchronous `ArxivCache`.
+/// Authenticated, rate-limited HTTP client for arXiv and Semantic Scholar.
+///
+/// Manages synchronization with a global rate limiter and an asynchronous cache.
+
 #[derive(Clone)]
 pub struct FetchClient {
     client: Client,
