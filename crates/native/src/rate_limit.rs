@@ -1,11 +1,9 @@
-use std::fs::OpenOptions;
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Read, Seek, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
-use fd_lock::RwLock;
 use tokio::sync::Mutex;
 
 use arxiv_search_rs_mcp_core::RateLimiter;
@@ -82,21 +80,43 @@ impl RateLimiter for FileRateLimiter {
 
         // Step 1: Acquire lock and claim the next available slot
         let sleep_ms = tokio::task::spawn_blocking(move || -> u64 {
-            let file = OpenOptions::new()
+            tracing::debug!("Attempting to open rate limit lock file at {:?}", lock_file_path);
+            let file = std::fs::OpenOptions::new()
                 .read(true)
                 .write(true)
                 .create(true)
                 .open(&lock_file_path)
-                .expect("Failed to open rate limit lock file");
+                .unwrap_or_else(|e| panic!("Failed to open rate limit lock file: {:?}", e));
 
-            let mut lock = RwLock::new(file);
-            let mut guard = lock.write().expect("Failed to acquire write lock on rate limit file");
+            let mut lock = fd_lock::RwLock::new(file);
+            tracing::debug!("Attempting to acquire write lock on rate limit file...");
+            
+            // Wait up to 30 seconds to acquire the lock to detect indefinite deadlocks
+            let lock_start = std::time::Instant::now();
+            let mut guard = loop {
+                match lock.try_write() {
+                    Ok(g) => break g,
+                    Err(e) => {
+                        if lock_start.elapsed() > Duration::from_secs(30) {
+                            tracing::error!("Indefinite hang detected: Could not acquire rate limit lock after 30 seconds. Another process may be deadlocked.");
+                            panic!("Rate limit lock acquisition timed out");
+                        }
+                        tracing::trace!("Lock held by another process, waiting... ({:?})", e);
+                        std::thread::sleep(Duration::from_millis(50));
+                    }
+                }
+            };
+
+            tracing::debug!("Acquired write lock on rate limit file in {:?}", lock_start.elapsed());
 
             let now = Self::get_now_ms();
             let mut content = String::new();
-            guard.read_to_string(&mut content).ok();
+            if let Err(e) = guard.read_to_string(&mut content) {
+                tracing::warn!("Failed to read rate limit file content: {:?}", e);
+            }
             
             let mut last_request = content.trim().parse::<u64>().unwrap_or(0);
+            tracing::debug!("Rate limit file contained last_request: {}", last_request);
             
             // Safety check: if last_request is too far in the future (e.g. clock skew), reset it.
             // We allow up to 30 seconds into the future just in case.
@@ -112,12 +132,18 @@ impl RateLimiter for FileRateLimiter {
                 (last_request + delay_ms).max(now)
             };
             let sleep_ms = next_allowed_start - now;
+
+            if let Err(e) = guard.set_len(0) {
+                tracing::error!("Failed to truncate rate limit file: {:?}", e);
+            }
+            if let Err(e) = guard.seek(std::io::SeekFrom::Start(0)) {
+                tracing::error!("Failed to seek rate limit file: {:?}", e);
+            }
+            if let Err(e) = guard.write_all(next_allowed_start.to_string().as_bytes()) {
+                tracing::error!("Failed to write to rate limit file: {:?}", e);
+            }
             
-            // Claim this slot
-            guard.set_len(0).expect("Failed to truncate rate limit file");
-            guard.seek(SeekFrom::Start(0)).expect("Failed to seek rate limit file");
-            guard.write_all(next_allowed_start.to_string().as_bytes()).expect("Failed to write to rate limit file");
-            
+            tracing::debug!("Releasing rate limit lock. Next allowed start: {}, sleeping for {}ms", next_allowed_start, sleep_ms);
             sleep_ms
         }).await.expect("spawn_blocking failed");
 
