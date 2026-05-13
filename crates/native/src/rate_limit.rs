@@ -56,8 +56,8 @@ pub struct FileRateLimiter {
 
 impl FileRateLimiter {
     #[must_use]
-    pub fn new(cache_dir: PathBuf, delay: Duration) -> Self {
-        let lock_file_path = cache_dir.join("rate_limit.lock");
+    pub fn new(cache_dir: PathBuf, delay: Duration, filename: &str) -> Self {
+        let lock_file_path = cache_dir.join(filename);
         Self {
             lock_file_path,
             delay,
@@ -119,9 +119,10 @@ impl RateLimiter for FileRateLimiter {
             tracing::debug!("Rate limit file contained last_request: {}", last_request);
             
             // Safety check: if last_request is too far in the future (e.g. clock skew), reset it.
-            // We allow up to 30 seconds into the future just in case.
-            if last_request > now + 30_000 {
-                tracing::warn!("Rate limit file has future timestamp ({}), resetting to now", last_request);
+            // We increase this to 10 minutes (600,000ms) to allow for long request queues 
+            // without triggering a reset that causes a burst of 429s.
+            if last_request > now + 600_000 {
+                tracing::warn!("Rate limit file has extreme future timestamp ({}), likely clock skew, resetting to now", last_request);
                 last_request = 0;
             }
 
@@ -141,6 +142,10 @@ impl RateLimiter for FileRateLimiter {
             }
             if let Err(e) = guard.write_all(next_allowed_start.to_string().as_bytes()) {
                 tracing::error!("Failed to write to rate limit file: {:?}", e);
+            }
+            
+            if sleep_ms > 5000 {
+                tracing::info!("arXiv rate limit queue deep: {}ms wait ahead", sleep_ms);
             }
             
             tracing::debug!("Releasing rate limit lock. Next allowed start: {}, sleeping for {}ms", next_allowed_start, sleep_ms);
@@ -166,14 +171,14 @@ mod tests {
         let temp = tempdir().unwrap();
         let cache_dir = temp.path().to_path_buf();
         let delay = Duration::from_millis(100);
-        let _limiter = FileRateLimiter::new(cache_dir, delay);
+        let _limiter = FileRateLimiter::new(cache_dir, delay, "test_rate_limit.lock");
 
         let start = Instant::now();
         
         // Spawn 3 concurrent requests
         let mut handles = vec![];
         for _ in 0..3 {
-            let l = FileRateLimiter::new(temp.path().to_path_buf(), delay);
+            let l = FileRateLimiter::new(temp.path().to_path_buf(), delay, "test_rate_limit.lock");
             handles.push(tokio::spawn(async move {
                 l.wait().await;
             }));

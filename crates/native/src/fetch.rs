@@ -13,7 +13,8 @@ const ARXIV_HTML_BASE: &str = "https://arxiv.org/html";
 const ARXIV_PDF_BASE: &str = "https://arxiv.org/pdf";
 const SS_API_BASE: &str = "https://api.semanticscholar.org/graph/v1";
 const SS_REC_BASE: &str = "https://api.semanticscholar.org/recommendations/v1";
-const ARXIV_RATE_LIMIT: Duration = Duration::from_millis(3140);
+const ARXIV_RATE_LIMIT: Duration = Duration::from_millis(5100);
+const SS_RATE_LIMIT: Duration = Duration::from_millis(1100);
 const MAX_RETRIES: u32 = 3;
 const RETRY_BASE_MS: u64 = 5_000;
 /// Authenticated, rate-limited HTTP client for arXiv and Semantic Scholar.
@@ -24,6 +25,7 @@ const RETRY_BASE_MS: u64 = 5_000;
 pub struct FetchClient {
     client: Client,
     rate_limiter: Arc<dyn RateLimiter>,
+    ss_rate_limiter: Arc<dyn RateLimiter>,
     ss_api_key: Option<String>,
     cache: ArxivCache,
     #[cfg(feature = "embedded-db")]
@@ -73,6 +75,12 @@ impl FetchClient {
             rate_limiter: Arc::new(crate::rate_limit::FileRateLimiter::new(
                 cache.get_cache_dir().clone(),
                 ARXIV_RATE_LIMIT,
+                "arxiv_rate_limit.lock"
+            )),
+            ss_rate_limiter: Arc::new(crate::rate_limit::FileRateLimiter::new(
+                cache.get_cache_dir().clone(),
+                SS_RATE_LIMIT,
+                "ss_rate_limit.lock"
             )),
             ss_api_key,
             cache,
@@ -252,6 +260,7 @@ impl FetchClient {
     /// Returns an error if the HTTP request fails, Semantic Scholar returns an error status, or
     /// the response body cannot be read.
     pub async fn fetch_citations(&self, paper_id: &str, limit: u32) -> Result<String> {
+        self.ss_rate_limiter.wait().await;
         let url = format!("{SS_API_BASE}/paper/ArXiv:{paper_id}/citations");
         let mut req = self.client.get(&url).query(&[
             ("fields", "title,authors,year,externalIds"),
@@ -275,6 +284,7 @@ impl FetchClient {
     /// Returns an error if the HTTP request fails, Semantic Scholar returns an error status, or
     /// the response body cannot be read.
     pub async fn fetch_recommendations(&self, paper_id: &str, limit: u32) -> Result<String> {
+        self.ss_rate_limiter.wait().await;
         let url = format!("{SS_REC_BASE}/papers/forpaper/ArXiv:{paper_id}");
         let mut req = self
             .client

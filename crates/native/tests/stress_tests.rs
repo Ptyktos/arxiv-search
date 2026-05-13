@@ -17,7 +17,7 @@ async fn test_extreme_concurrency() {
     for i in 0..num_requests {
         let dir = cache_dir.clone();
         handles.push(tokio::spawn(async move {
-            let limiter = FileRateLimiter::new(dir, delay);
+            let limiter = FileRateLimiter::new(dir, delay, "rate_limit.lock");
             limiter.wait().await;
             i
         }));
@@ -50,13 +50,13 @@ async fn test_future_timestamp_recovery() {
     
     fs::write(&lock_file, future_time.to_string()).unwrap();
     
-    let limiter = FileRateLimiter::new(cache_dir, Duration::from_millis(100));
+    let limiter = FileRateLimiter::new(cache_dir, Duration::from_millis(100), "rate_limit.lock");
     
     let start = Instant::now();
     limiter.wait().await;
     let elapsed = start.elapsed();
     
-    // Should NOT wait for an hour. The fix resets future timestamps > 30s.
+    // Should NOT wait for an hour. The fix resets extreme future timestamps (> 10 min).
     assert!(elapsed < Duration::from_secs(5), "Should have recovered from future timestamp quickly, took {:?}", elapsed);
 }
 
@@ -69,7 +69,7 @@ async fn test_corrupt_lock_file() {
     // Write garbage
     fs::write(&lock_file, "garbage data that is not a number").unwrap();
     
-    let limiter = FileRateLimiter::new(cache_dir, Duration::from_millis(10));
+    let limiter = FileRateLimiter::new(cache_dir, Duration::from_millis(10), "rate_limit.lock");
     
     let start = Instant::now();
     limiter.wait().await;
@@ -88,7 +88,7 @@ async fn test_race_condition_file_deletion() {
     let cache_dir = temp.path().to_path_buf();
     let lock_file = cache_dir.join("rate_limit.lock");
     
-    let limiter = FileRateLimiter::new(cache_dir.clone(), Duration::from_millis(50));
+    let limiter = FileRateLimiter::new(cache_dir.clone(), Duration::from_millis(50), "rate_limit.lock");
     
     // Start one request
     let h1 = tokio::spawn(async move {
@@ -100,7 +100,7 @@ async fn test_race_condition_file_deletion() {
     let _ = fs::remove_file(&lock_file);
     
     // Another request should still work (it will recreate the file)
-    let limiter2 = FileRateLimiter::new(cache_dir, Duration::from_millis(50));
+    let limiter2 = FileRateLimiter::new(cache_dir, Duration::from_millis(50), "rate_limit.lock");
     let h2 = tokio::spawn(async move {
         limiter2.wait().await;
     });
@@ -122,7 +122,7 @@ async fn test_concurrent_client_initialization() {
     for _ in 0..10 {
         let dir = cache_dir.clone();
         handles.push(tokio::spawn(async move {
-            let _limiter = FileRateLimiter::new(dir, Duration::from_millis(100));
+            let _limiter = FileRateLimiter::new(dir, Duration::from_millis(100), "rate_limit.lock");
             // In a real scenario, FetchClient::new would also init Cache and DB.
             // We are testing the lock file contention here.
         }));
