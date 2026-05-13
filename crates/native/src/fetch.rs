@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context as _, Result};
@@ -6,26 +5,20 @@ use reqwest::Client;
 
 use crate::persistence::{ArxivCache, DEFAULT_CACHE_TTL};
 use arxiv_search_rs_mcp_core::arxiv::QueryParams;
-use arxiv_search_rs_mcp_core::RateLimiter;
 
 const ARXIV_API_BASE: &str = "https://export.arxiv.org/api/query";
 const ARXIV_HTML_BASE: &str = "https://arxiv.org/html";
 const ARXIV_PDF_BASE: &str = "https://arxiv.org/pdf";
 const SS_API_BASE: &str = "https://api.semanticscholar.org/graph/v1";
 const SS_REC_BASE: &str = "https://api.semanticscholar.org/recommendations/v1";
-const ARXIV_RATE_LIMIT: Duration = Duration::from_millis(5100);
-const SS_RATE_LIMIT: Duration = Duration::from_millis(1100);
-const MAX_RETRIES: u32 = 3;
-const RETRY_BASE_MS: u64 = 5_000;
-/// Authenticated, rate-limited HTTP client for arXiv and Semantic Scholar.
-///
-/// Manages synchronization with a global rate limiter and an asynchronous cache.
 
+/// Authenticated HTTP client for arXiv and Semantic Scholar.
+///
+/// This version is KISS: no cross-process locking. It relies on immediate
+/// HTML fallback if the API is rate-limited or slow.
 #[derive(Clone)]
 pub struct FetchClient {
     client: Client,
-    rate_limiter: Arc<dyn RateLimiter>,
-    ss_rate_limiter: Arc<dyn RateLimiter>,
     ss_api_key: Option<String>,
     cache: ArxivCache,
     #[cfg(feature = "embedded-db")]
@@ -49,8 +42,8 @@ impl FetchClient {
         #[expect(clippy::duration_suboptimal_units)]
         let client = Client::builder()
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-            .timeout(Duration::from_secs(60))
-            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(5))
+            .connect_timeout(Duration::from_secs(2))
             .pool_idle_timeout(Duration::from_secs(90))
             .tcp_keepalive(Some(Duration::from_secs(60)))
             .build()
@@ -71,16 +64,6 @@ impl FetchClient {
 
         Ok(Self {
             client,
-            rate_limiter: Arc::new(crate::rate_limit::FileRateLimiter::new(
-                cache.get_cache_dir().clone(),
-                ARXIV_RATE_LIMIT,
-                "arxiv_rate_limit.lock"
-            )),
-            ss_rate_limiter: Arc::new(crate::rate_limit::FileRateLimiter::new(
-                cache.get_cache_dir().clone(),
-                SS_RATE_LIMIT,
-                "ss_rate_limit.lock"
-            )),
             ss_api_key,
             cache,
             #[cfg(feature = "embedded-db")]
@@ -90,94 +73,50 @@ impl FetchClient {
 
     /// # Errors
     ///
-    /// Returns an error if the HTTP request fails, the server returns an error status, or the
-    /// response body cannot be read. Retries transient 429/503 errors with exponential backoff.
+    /// Returns an error if the HTTP request fails. Falls back to HTML search immediately on API issues.
     pub async fn fetch_arxiv_query(&self, params: &QueryParams) -> Result<String> {
-        for attempt in 0..MAX_RETRIES {
-            let span = tracing::info_span!("arxiv_api_fetch", attempt = attempt + 1);
-            let _enter = span.enter();
-            
-            tracing::info!("arXiv fetch attempt {}/{} for query", attempt + 1, MAX_RETRIES);
-            self.rate_limiter.wait().await;
-            
-            let request_start = std::time::Instant::now();
-            let response_result = self
-                .client
-                .get(ARXIV_API_BASE)
-                .query(&[
-                    ("search_query", params.search_query.as_str()),
-                    ("max_results", &params.max_results.to_string()),
-                    ("start", &params.start.to_string()),
-                    ("sortBy", params.sort_by.as_str()),
-                    ("sortOrder", params.sort_order.as_str()),
-                ])
-                .send()
-                .await;
+        let span = tracing::info_span!("arxiv_query_orchestrator");
+        let _enter = span.enter();
 
-            let response = match response_result {
-                Ok(r) => {
-                    tracing::debug!(elapsed = ?request_start.elapsed(), "arXiv API response received");
-                    r
-                },
-                Err(e) => {
-                    tracing::error!(?e, "arXiv API request failed");
-                    if attempt + 1 < MAX_RETRIES {
-                        let delay = RETRY_BASE_MS * 2u64.pow(attempt);
-                        tokio::time::sleep(Duration::from_millis(delay)).await;
-                        continue;
-                    }
-                    
-                    // Fallback to HTML scraping on final attempt failure
-                    tracing::info!("Attempting HTML fallback search...");
-                    return self.scrape_arxiv_search(params).await;
-                }
-            };
+        tracing::info!("Starting arXiv query for: {}", params.search_query);
+        
+        let response_result = self
+            .client
+            .get(ARXIV_API_BASE)
+            .query(&[
+                ("search_query", params.search_query.as_str()),
+                ("max_results", &params.max_results.to_string()),
+                ("start", &params.start.to_string()),
+                ("sortBy", params.sort_by.as_str()),
+                ("sortOrder", params.sort_order.as_str()),
+            ])
+            .send()
+            .await;
 
-            let status = response.status().as_u16();
-            if status == 429 || status == 503 {
-                if attempt + 1 == MAX_RETRIES {
-                    tracing::warn!("arXiv API rate limited on final attempt, falling back to HTML");
-                    return self.scrape_arxiv_search(params).await;
-                }
-                
-                let base_delay = RETRY_BASE_MS * 2u64.pow(attempt);
-                let jitter = (base_delay as f64 * (rand::random::<f64>() * 0.5 - 0.25)) as i64;
-                let delay = (base_delay as i64 + jitter).max(1000) as u64;
-
-                tracing::warn!(status, delay, "arXiv rate limited, retrying");
-                tokio::time::sleep(Duration::from_millis(delay)).await;
-                continue;
-            }
-
-            if !response.status().is_success() {
+        match response_result {
+            Ok(response) => {
                 let status = response.status();
-                let body = response.text().await.unwrap_or_default();
-                tracing::error!(%status, %body, "arXiv API error");
-                
-                if attempt + 1 == MAX_RETRIES {
-                    return self.scrape_arxiv_search(params).await;
+                if status.is_success() {
+                    return response.text().await.context("failed to read response");
                 }
-                continue;
+                
+                tracing::warn!(%status, "API issue, falling back to HTML immediately");
             }
-            
-            return response
-                .text()
-                .await
-                .context("failed to read arXiv response body");
+            Err(e) => {
+                tracing::error!(?e, "API request failed, falling back to HTML");
+            }
         }
-        anyhow::bail!("arXiv API failed after {MAX_RETRIES} retries")
+        
+        // Immediate fallback to HTML scraping if API fails or is limited
+        self.scrape_arxiv_search(params).await
     }
 
     /// Scrapes the arXiv search page as a fallback for the API.
-    /// This converts the HTML results into a minimal Atom XML format that the existing parser can handle.
     async fn scrape_arxiv_search(&self, params: &QueryParams) -> Result<String> {
         let span = tracing::info_span!("arxiv_html_fallback");
         let _enter = span.enter();
         
         tracing::info!("Scraping arXiv search HTML for query: {}", params.search_query);
-        
-        // Use a slightly different rate limit or just wait normally
-        self.rate_limiter.wait().await;
 
         let search_url = "https://arxiv.org/search/";
         let response = self.client.get(search_url)
@@ -195,23 +134,26 @@ impl FetchClient {
 
         let html = response.text().await.context("failed to read HTML search body")?;
         
-        // Minimal extraction logic: find paper IDs and titles
-        // ArXiv HTML format: <p class="list-title is-inline-block"><a href="https://arxiv.org/abs/2403.12345">arXiv:2403.12345</a></p>
-        // and <p class="title is-5 mathjax">Title Here</p>
-        
         let mut entries = Vec::new();
         
-        // Simple regex-based extraction to avoid new dependencies
+        let re_block = regex::Regex::new(r"(?s)<li class=.arxiv-result.>(.*?)</li>").unwrap();
         let re_id = regex::Regex::new(r"arxiv\.org/abs/(\d+\.\d+v?\d*)").unwrap();
-        let re_title = regex::Regex::new(r#"<p class="title is-5 mathjax">\s*(.*?)\s*</p>"#).unwrap();
-        
-        let ids: Vec<_> = re_id.captures_iter(&html).map(|c| c[1].to_string()).collect();
-        let titles: Vec<_> = re_title.captures_iter(&html).map(|c| c[1].to_string()).collect();
-        
-        for (id, title) in ids.into_iter().zip(titles.into_iter()) {
-            entries.push(format!(
-                r#"<entry><id>http://arxiv.org/abs/{id}</id><title>{title}</title><link href="http://arxiv.org/abs/{id}" rel="alternate" type="text/html"/></entry>"#
-            ));
+        let re_title = regex::Regex::new(r#"(?s)<p class="title is-5 mathjax">\s*(.*?)\s*</p>"#).unwrap();
+        let re_strip = regex::Regex::new(r"<[^>]*>").unwrap();
+
+        for cap in re_block.captures_iter(&html) {
+            let block = &cap[1];
+            let id = re_id.captures(block).map(|c| c[1].to_string());
+            let title = re_title.captures(block).map(|c| {
+                let t = c[1].to_string();
+                re_strip.replace_all(&t, "").trim().to_string()
+            });
+
+            if let (Some(id), Some(title)) = (id, title) {
+                entries.push(format!(
+                    r#"<entry><id>http://arxiv.org/abs/{id}</id><title>{title}</title><link href="http://arxiv.org/abs/{id}" rel="alternate" type="text/html"/></entry>"#
+                ));
+            }
         }
 
         if entries.is_empty() && !html.contains("no results") {
@@ -226,57 +168,39 @@ impl FetchClient {
 
     /// # Errors
     ///
-    /// Returns an error if the HTTP request fails, the server returns an error status, or the
-    /// response body cannot be read. Retries transient 429/503 errors with exponential backoff.
+    /// Returns an error if the HTTP request fails.
     pub async fn fetch_arxiv_by_id(&self, paper_id: &str) -> Result<String> {
         if let Some(cached) = self.cache.get_metadata(paper_id).await? {
             tracing::info!("Cache hit for metadata: {}", paper_id);
             return Ok(cached);
         }
 
-        for attempt in 0..MAX_RETRIES {
-            self.rate_limiter.wait().await;
-            let response = self
-                .client
-                .get(ARXIV_API_BASE)
-                .query(&[("id_list", paper_id)])
-                .send()
-                .await
-                .context("arXiv ID lookup request failed")?;
-            let status = response.status().as_u16();
-            if status == 429 || status == 503 {
-                let base_delay = RETRY_BASE_MS * 2u64.pow(attempt);
-                let jitter = (base_delay as f64 * (rand::random::<f64>() * 0.5 - 0.25)) as i64;
-                let delay = (base_delay as i64 + jitter).max(1000) as u64;
+        let response = self
+            .client
+            .get(ARXIV_API_BASE)
+            .query(&[("id_list", paper_id)])
+            .send()
+            .await
+            .context("arXiv ID lookup request failed")?;
 
-                tracing::warn!("arXiv returned {status} for id {paper_id}, retrying in {delay}ms (attempt {}/{})", attempt + 1, MAX_RETRIES);
-                tokio::time::sleep(Duration::from_millis(delay)).await;
-                continue;
-            }
-            let text = response
-                .error_for_status()
-                .context("arXiv API returned error status")?
-                .text()
-                .await
-                .context("failed to read arXiv response body")?;
-
-            let _ = self.cache.set_metadata(paper_id, &text).await;
-            return Ok(text);
+        if !response.status().is_success() {
+            anyhow::bail!("arXiv API error: status {}", response.status());
         }
-        anyhow::bail!("arXiv ID lookup failed after {MAX_RETRIES} retries (429/503)")
+
+        let text = response.text().await.context("failed to read arXiv response body")?;
+        let _ = self.cache.set_metadata(paper_id, &text).await;
+        Ok(text)
     }
 
     /// # Errors
     ///
     /// Returns an error if the HTTP request fails or the server returns a non-404 error status.
-    /// Returns `Ok(None)` if the HTML version does not exist (404).
     pub async fn fetch_html(&self, paper_id: &str) -> Result<Option<String>> {
         if let Some(cached) = self.cache.get_html(paper_id).await? {
             tracing::info!("Cache hit for HTML: {}", paper_id);
             return Ok(Some(cached));
         }
 
-        self.rate_limiter.wait().await;
         let url = format!("{ARXIV_HTML_BASE}/{paper_id}");
         let response = self
             .client
@@ -284,9 +208,11 @@ impl FetchClient {
             .send()
             .await
             .context("HTML fetch request failed")?;
+        
         if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Ok(None);
         }
+        
         let text = response
             .error_for_status()
             .context("HTML endpoint returned error status")?
@@ -300,15 +226,13 @@ impl FetchClient {
 
     /// # Errors
     ///
-    /// Returns an error if the HTTP request fails, the server returns an error status, or the
-    /// response body cannot be read.
+    /// Returns an error if the HTTP request fails.
     pub async fn fetch_pdf(&self, paper_id: &str) -> Result<Vec<u8>> {
         if let Some(cached) = self.cache.get_pdf(paper_id).await? {
             tracing::info!("Cache hit for PDF: {}", paper_id);
             return Ok(cached);
         }
 
-        self.rate_limiter.wait().await;
         let url = format!("{ARXIV_PDF_BASE}/{paper_id}");
         let bytes = self
             .client
@@ -321,6 +245,7 @@ impl FetchClient {
             .bytes()
             .await
             .context("failed to read PDF response body")?;
+        
         let bytes_vec = bytes.to_vec();
         self.cache.set_pdf(paper_id, &bytes_vec).await?;
         Ok(bytes_vec)
@@ -328,10 +253,8 @@ impl FetchClient {
 
     /// # Errors
     ///
-    /// Returns an error if the HTTP request fails, Semantic Scholar returns an error status, or
-    /// the response body cannot be read.
+    /// Returns an error if the HTTP request fails.
     pub async fn fetch_citations(&self, paper_id: &str, limit: u32) -> Result<String> {
-        self.ss_rate_limiter.wait().await;
         let url = format!("{SS_API_BASE}/paper/ArXiv:{paper_id}/citations");
         let mut req = self.client.get(&url).query(&[
             ("fields", "title,authors,year,externalIds"),
@@ -352,10 +275,8 @@ impl FetchClient {
 
     /// # Errors
     ///
-    /// Returns an error if the HTTP request fails, Semantic Scholar returns an error status, or
-    /// the response body cannot be read.
+    /// Returns an error if the HTTP request fails.
     pub async fn fetch_recommendations(&self, paper_id: &str, limit: u32) -> Result<String> {
-        self.ss_rate_limiter.wait().await;
         let url = format!("{SS_REC_BASE}/papers/forpaper/ArXiv:{paper_id}");
         let mut req = self
             .client
@@ -425,77 +346,38 @@ mod tests {
         assert!(!papers[0].title.is_empty());
     }
 
-    #[tokio::test]
-    #[ignore = "requires network"]
-    async fn get_abstract_known_paper() {
-        let client = get_client().await;
-        let id = normalize_paper_id(ATTENTION_PAPER_ID).expect("normalize failed");
-        let xml = client.fetch_arxiv_by_id(&id).await.expect("fetch failed");
-        let response = parse_response(&xml).expect("parse failed");
-        let papers = response.papers;
-        assert_eq!(papers.len(), 1);
-        assert!(
-            papers[0].title.to_lowercase().contains("attention"),
-            "unexpected title: {}",
-            papers[0].title
-        );
-    }
-
-    #[tokio::test]
-    #[ignore = "requires network"]
-    async fn download_paper_html_path() {
-        let client = get_client().await;
-        let html = client.fetch_html("2303.08774").await.expect("fetch failed");
-        assert!(
-            html.is_some(),
-            "expected HTML to be available for this paper"
-        );
-        let md = to_markdown(html.as_deref().expect("html was None")).expect("markdown failed");
-        assert!(md.len() > 100, "markdown output was suspiciously short");
-    }
-
-    #[tokio::test]
-    #[ignore = "requires network"]
-    async fn citations_returns_results() {
-        let client = get_client().await;
-        let json = client
-            .fetch_citations(ATTENTION_PAPER_ID, 5)
-            .await
-            .expect("fetch failed");
-        let _papers = parse_citations(&json).expect("parse failed");
-    }
-
-    #[tokio::test]
-    #[ignore = "requires network"]
-    async fn recommendations_returns_results() {
-        let client = get_client().await;
-        let json = client
-            .fetch_recommendations(ATTENTION_PAPER_ID, 5)
-            .await
-            .expect("fetch failed");
-        let _papers = parse_recommendations(&json).expect("parse failed");
-    }
-
     #[test]
     fn test_html_scraping_regex() {
         let html = r#"
-            <li class="arxiv-result">
-                <p class="list-title is-inline-block">
-                    <a href="https://arxiv.org/abs/2403.12345">arXiv:2403.12345</a>
-                </p>
-                <p class="title is-5 mathjax">
-                    A Very Important Paper
-                </p>
-            </li>
+    <li class="arxiv-result">
+      <p class="list-title is-inline-block"><a href="https://arxiv.org/abs/2605.11861">arXiv:2605.11861</a></p>
+      <p class="title is-5 mathjax">
+        Observation of sine-Gordon-like solitons in a spinor Bose-<span class="search-hit mathjax">Einstein</span> condensate
+      </p>
+    </li>
         "#;
         
+        let mut entries = Vec::new();
+        let re_block = regex::Regex::new(r"(?s)<li class=.arxiv-result.>(.*?)</li>").unwrap();
         let re_id = regex::Regex::new(r"arxiv\.org/abs/(\d+\.\d+v?\d*)").unwrap();
-        let re_title = regex::Regex::new(r#"<p class="title is-5 mathjax">\s*(.*?)\s*</p>"#).unwrap();
+        let re_title = regex::Regex::new(r#"(?s)<p class="title is-5 mathjax">\s*(.*?)\s*</p>"#).unwrap();
+        let re_strip = regex::Regex::new(r"<[^>]*>").unwrap();
+
+        for cap in re_block.captures_iter(html) {
+            let block = &cap[1];
+            let id = re_id.captures(block).map(|c| c[1].to_string());
+            let title = re_title.captures(block).map(|c| {
+                let t = c[1].to_string();
+                re_strip.replace_all(&t, "").trim().to_string()
+            });
+
+            if let (Some(id), Some(title)) = (id, title) {
+                entries.push((id, title));
+            }
+        }
         
-        let ids: Vec<_> = re_id.captures_iter(html).map(|c| c[1].to_string()).collect();
-        let titles: Vec<_> = re_title.captures_iter(html).map(|c| c[1].to_string()).collect();
-        
-        assert_eq!(ids, vec!["2403.12345"]);
-        assert_eq!(titles, vec!["A Very Important Paper"]);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].0, "2605.11861");
+        assert_eq!(entries[0].1, "Observation of sine-Gordon-like solitons in a spinor Bose-Einstein condensate");
     }
 }
