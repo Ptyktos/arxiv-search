@@ -143,12 +143,12 @@ impl FetchClient {
         
         // Diagnostic 'flagging' of the response for visibility in tests
         if html.contains("Rate exceeded") || html.contains("Access Denied") {
-            println!("ARXIV BLOCK DETECTED: {}", if html.contains("Rate exceeded") { "Rate exceeded" } else { "Access Denied" });
+            tracing::warn!("ARXIV BLOCK DETECTED: {}", if html.contains("Rate exceeded") { "Rate exceeded" } else { "Access Denied" });
         }
         
-        if html.len() > 0 {
+        if !html.is_empty() {
             let snippet: String = html.chars().take(200).collect();
-            println!("HTML STATUS: {} | BODY SNIPPET: {}", status, snippet);
+            tracing::debug!("HTML STATUS: {} | BODY SNIPPET: {}", status, snippet);
         }
         
         let mut entries = Vec::new();
