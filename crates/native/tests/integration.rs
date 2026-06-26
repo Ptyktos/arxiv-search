@@ -6,6 +6,7 @@ use arxiv_search_rs_mcp_native::tool::{ArxivServer, RetrieveInput};
 use std::path::Path;
 
 #[tokio::test]
+#[expect(clippy::panic_in_result_fn)]
 async fn test_full_rag_pipeline() -> Result<(), Box<dyn std::error::Error>> {
     let test_db = Path::new("test_full_rag.db");
     if test_db.exists() {
@@ -25,7 +26,7 @@ async fn test_full_rag_pipeline() -> Result<(), Box<dyn std::error::Error>> {
         abstract_text: "Abstract".into(),
         categories: vec![],
         published: "2024".into(),
-        url: "".into(),
+        url: String::new(),
         doi: None,
         journal_ref: None,
     };
@@ -68,6 +69,7 @@ async fn test_full_rag_pipeline() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test]
 #[ignore = "requires network"]
+#[expect(clippy::panic_in_result_fn)]
 async fn test_run_retrieve_stores_real_metadata() -> Result<(), Box<dyn std::error::Error>> {
     let client = FetchClient::new(None).await?;
     let server = ArxivServer::new(client);
@@ -93,8 +95,7 @@ async fn test_run_retrieve_stores_real_metadata() -> Result<(), Box<dyn std::err
     );
     assert!(
         title.contains("Octonion") || title.contains("Standard Model"),
-        "title '{}' should contain Octonion or Standard Model",
-        title
+        "title '{title}' should contain Octonion or Standard Model",
     );
 
     Ok(())
@@ -102,6 +103,7 @@ async fn test_run_retrieve_stores_real_metadata() -> Result<(), Box<dyn std::err
 
 #[tokio::test]
 #[ignore = "requires network"]
+#[expect(clippy::panic_in_result_fn)]
 async fn test_segmentation_k_produces_hierarchical_chunks() -> Result<(), Box<dyn std::error::Error>>
 {
     let client = FetchClient::new(None).await?;

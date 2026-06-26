@@ -504,7 +504,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires network"]
-    #[expect(clippy::unwrap_used, clippy::expect_used)]
+    #[expect(clippy::expect_used)]
     async fn test_scrape_arxiv_search_real() {
         let client = get_client().await;
         let params = build_query_params("Einstein", 5, 0, None, None, &[], "relevance")
@@ -531,7 +531,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires network"]
-    #[expect(clippy::unwrap_used, clippy::expect_used)]
+    #[expect(clippy::expect_used)]
     async fn test_real_orchestrator_fallback() {
         let mut client = get_client().await;
         // Break the API base to force the orchestrator to fall back to HTML scraping

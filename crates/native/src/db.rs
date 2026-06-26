@@ -285,7 +285,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    #[expect(clippy::panic_in_result_fn, clippy::unwrap_used)]
+    #[expect(clippy::panic_in_result_fn)]
     fn test_db_init_and_basic_ops() -> Result<()> {
         let dir = tempdir()?;
         let db_path = dir.path().join("test.db");

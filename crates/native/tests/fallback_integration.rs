@@ -1,10 +1,9 @@
-use arxiv_search_rs_mcp_core::arxiv::{build_query_params, parse_response};
 use arxiv_search_rs_mcp_native::fetch::FetchClient;
 
 #[tokio::test]
 #[ignore = "requires network"]
 async fn test_html_fallback_integration() -> Result<(), Box<dyn std::error::Error>> {
-    let client = FetchClient::new(None).await?;
+    let _client = FetchClient::new(None).await?;
 
     // We want to test that the scraper works against the real arXiv site.
     // Since we made it pub(crate), we can't easily access it from here unless we are in the same crate.

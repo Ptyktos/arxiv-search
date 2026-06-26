@@ -5,6 +5,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tempfile::tempdir;
 
 #[tokio::test]
+#[expect(clippy::unwrap_used, clippy::print_stdout)]
 async fn test_extreme_concurrency() {
     let temp = tempdir().unwrap();
     let cache_dir = temp.path().to_path_buf();
@@ -23,28 +24,23 @@ async fn test_extreme_concurrency() {
         }));
     }
 
-    let mut results = vec![];
     for h in handles {
-        results.push(h.await.unwrap());
+        h.await.unwrap();
     }
 
     let elapsed = start.elapsed();
-    println!(
-        "Processed {} concurrent requests in {:?}",
-        num_requests, elapsed
-    );
+    println!("Processed {num_requests} concurrent requests in {elapsed:?}");
 
     // Total time should be at least (num_requests - 1) * delay
     let min_expected = delay * (num_requests - 1);
     assert!(
         elapsed >= min_expected,
-        "Should have taken at least {:?}, took {:?}",
-        min_expected,
-        elapsed
+        "Should have taken at least {min_expected:?}, took {elapsed:?}"
     );
 }
 
 #[tokio::test]
+#[expect(clippy::unwrap_used, clippy::cast_possible_truncation)]
 async fn test_future_timestamp_recovery() {
     let temp = tempdir().unwrap();
     let cache_dir = temp.path().to_path_buf();
@@ -55,7 +51,7 @@ async fn test_future_timestamp_recovery() {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis() as u64
-        + 3600_000;
+        + 3_600_000;
 
     fs::write(&lock_file, future_time.to_string()).unwrap();
 
@@ -68,12 +64,12 @@ async fn test_future_timestamp_recovery() {
     // Should NOT wait for an hour. The fix resets extreme future timestamps (> 10 min).
     assert!(
         elapsed < Duration::from_secs(5),
-        "Should have recovered from future timestamp quickly, took {:?}",
-        elapsed
+        "Should have recovered from future timestamp quickly, took {elapsed:?}"
     );
 }
 
 #[tokio::test]
+#[expect(clippy::unwrap_used)]
 async fn test_corrupt_lock_file() {
     let temp = tempdir().unwrap();
     let cache_dir = temp.path().to_path_buf();
@@ -90,8 +86,7 @@ async fn test_corrupt_lock_file() {
 
     assert!(
         elapsed < Duration::from_secs(1),
-        "Should have recovered from corrupt file, took {:?}",
-        elapsed
+        "Should have recovered from corrupt file, took {elapsed:?}"
     );
 
     // Verify it wrote a valid timestamp back
@@ -100,6 +95,7 @@ async fn test_corrupt_lock_file() {
 }
 
 #[tokio::test]
+#[expect(clippy::unwrap_used)]
 async fn test_race_condition_file_deletion() {
     let temp = tempdir().unwrap();
     let cache_dir = temp.path().to_path_buf();
@@ -127,6 +123,7 @@ async fn test_race_condition_file_deletion() {
 }
 
 #[tokio::test]
+#[expect(clippy::unwrap_used)]
 async fn test_concurrent_client_initialization() {
     let temp = tempdir().unwrap();
     let cache_dir = temp.path().to_path_buf();
