@@ -100,7 +100,7 @@ impl ArxivCache {
 
     fn validate_id(paper_id: &str) -> Result<()> {
         if paper_id.contains('/') || paper_id.contains('\\') || paper_id.contains("..") {
-            anyhow::bail!("Invalid paper ID: {}", paper_id);
+            anyhow::bail!("Invalid paper ID: {paper_id}");
         }
         Ok(())
     }
@@ -302,10 +302,10 @@ mod tests {
         let malicious_id = "../../etc/passwd";
         assert!(cache.get_html(malicious_id).await.is_err());
         assert!(cache.set_html(malicious_id, "test").await.is_err());
-        
+
         let malicious_id_2 = "paper/../hidden";
         assert!(cache.get_pdf(malicious_id_2).await.is_err());
-        
+
         Ok(())
     }
 }

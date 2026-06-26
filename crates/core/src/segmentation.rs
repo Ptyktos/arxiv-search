@@ -1,5 +1,5 @@
-use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 /// A segment of text with its corresponding embedding.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -68,7 +68,7 @@ impl HierarchicalSegmenter {
         while i < clusters.len() - 1 {
             let s1 = clusters[i][clusters[i].len() - 1];
             let s2 = clusters[i + 1][0];
-            
+
             let shared_clique = cliques.iter().any(|q| q.contains(&s1) && q.contains(&s2));
             if shared_clique {
                 let mut next_cluster = clusters.remove(i + 1);
@@ -84,7 +84,7 @@ impl HierarchicalSegmenter {
         while i < clusters.len() - 1 {
             let c1 = &clusters[i];
             let c2 = &clusters[i + 1];
-            
+
             let shared_clique = cliques.iter().any(|q| {
                 let has_c1 = c1.iter().any(|s| q.contains(s));
                 let has_c2 = c2.iter().any(|s| q.contains(s));
@@ -146,7 +146,10 @@ impl HierarchicalSegmenter {
         let mut similarities = Vec::new();
         for i in 0..segments.len() {
             for j in i + 1..segments.len() {
-                similarities.push(cosine_similarity(&segments[i].embedding, &segments[j].embedding));
+                similarities.push(cosine_similarity(
+                    &segments[i].embedding,
+                    &segments[j].embedding,
+                ));
             }
         }
         if similarities.is_empty() {
@@ -220,7 +223,6 @@ impl TopicSynthesizer {
     }
 }
 
-
 /// Cosine similarity between two vectors.
 #[must_use]
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
@@ -260,7 +262,8 @@ fn bron_kerbosch_pivot(
     }
 
     // Pivot selection to minimize recursive calls
-    let u = p.union(&x)
+    let u = p
+        .union(&x)
         .max_by_key(|&&u| p.iter().filter(|&&v| adj[u][v]).count())
         .copied()
         .unwrap_or(0);
@@ -287,23 +290,42 @@ mod tests {
     #[test]
     fn test_threshold_calculation() {
         let segments = vec![
-            Segment { text: "a".into(), embedding: vec![1.0, 0.0] },
-            Segment { text: "b".into(), embedding: vec![0.8, 0.6] }, // sim = 0.8
-            Segment { text: "c".into(), embedding: vec![0.6, 0.8] }, // sim(a,c)=0.6, sim(b,c)=0.8*0.6 + 0.6*0.8 = 0.48+0.48=0.96
+            Segment {
+                text: "a".into(),
+                embedding: vec![1.0, 0.0],
+            },
+            Segment {
+                text: "b".into(),
+                embedding: vec![0.8, 0.6],
+            }, // sim = 0.8
+            Segment {
+                text: "c".into(),
+                embedding: vec![0.6, 0.8],
+            }, // sim(a,c)=0.6, sim(b,c)=0.8*0.6 + 0.6*0.8 = 0.48+0.48=0.96
         ];
-        
+
         let s12 = 0.8f32;
         let s13 = 0.6f32;
         let s23 = 0.96f32;
-        
+
         let expected_mu = (s12 + s13 + s23) / 3.0;
-        let expected_sigma = ((s23 - expected_mu).mul_add(s23 - expected_mu, (s12 - expected_mu).mul_add(s12 - expected_mu, (s13 - expected_mu).powi(2))) / 3.0).sqrt();
-        
+        let expected_sigma = ((s23 - expected_mu).mul_add(
+            s23 - expected_mu,
+            (s12 - expected_mu).mul_add(s12 - expected_mu, (s13 - expected_mu).powi(2)),
+        ) / 3.0)
+            .sqrt();
+
         let segmenter = HierarchicalSegmenter::new(ClusteringOptions { k: 1.2 });
         let (mu, sigma) = segmenter.compute_stats(&segments);
-        
-        assert!((mu - expected_mu).abs() < 1e-6, "Mean mismatch: {mu} != {expected_mu}");
-        assert!((sigma - expected_sigma).abs() < 1e-6, "StdDev mismatch: {sigma} != {expected_sigma}");
+
+        assert!(
+            (mu - expected_mu).abs() < 1e-6,
+            "Mean mismatch: {mu} != {expected_mu}"
+        );
+        assert!(
+            (sigma - expected_sigma).abs() < 1e-6,
+            "StdDev mismatch: {sigma} != {expected_sigma}"
+        );
     }
 
     #[test]
@@ -311,19 +333,19 @@ mod tests {
         // Mocking the behavior of Step 3 and 4 based on Table 1
         // Cliques: {0, 1, 5}, {1, 3, 6}, {2, 3, 4}, {0, 5, 6}
         let adj = vec![
-            vec![false, true,  false, false, false, true,  true ], // 0: adj to 1, 5, 6
-            vec![true,  false, false, true,  false, true,  true ], // 1: adj to 0, 3, 5, 6
-            vec![false, false, false, true,  true,  false, false], // 2: adj to 3, 4
-            vec![false, true,  true,  false, true,  false, true ], // 3: adj to 1, 2, 4, 6
-            vec![false, false, true,  true,  false, false, false], // 4: adj to 2, 3
-            vec![true,  true,  false, false, false, false, true ], // 5: adj to 0, 1, 6
-            vec![true,  true,  false, true,  false, true,  false], // 6: adj to 0, 1, 3, 5
+            vec![false, true, false, false, false, true, true], // 0: adj to 1, 5, 6
+            vec![true, false, false, true, false, true, true],  // 1: adj to 0, 3, 5, 6
+            vec![false, false, false, true, true, false, false], // 2: adj to 3, 4
+            vec![false, true, true, false, true, false, true],  // 3: adj to 1, 2, 4, 6
+            vec![false, false, true, true, false, false, false], // 4: adj to 2, 3
+            vec![true, true, false, false, false, false, true], // 5: adj to 0, 1, 6
+            vec![true, true, false, true, false, true, false],  // 6: adj to 0, 1, 3, 5
         ];
         // Wait, the adj matrix must match the cliques exactly.
         // Let's just use the cliques directly in a testable function if I refactor.
         // For now, I'll test the find_maximal_cliques on this adj.
         let cliques = find_maximal_cliques(&adj);
-        
+
         // Ensure our BK implementation finds the cliques.
         let expected_cliques = vec![
             HashSet::from([0, 1, 5]),
@@ -332,9 +354,12 @@ mod tests {
             HashSet::from([0, 5, 6]),
             HashSet::from([1, 5, 6]), // Wait, if (1,5) and (5,6) and (1,6) are all true, {1,5,6} is a clique.
         ];
-        
+
         for eq in expected_cliques {
-            assert!(cliques.iter().any(|q| eq.iter().all(|v| q.contains(v))), "Missing clique {eq:?}");
+            assert!(
+                cliques.iter().any(|q| eq.iter().all(|v| q.contains(v))),
+                "Missing clique {eq:?}"
+            );
         }
     }
 
@@ -343,16 +368,29 @@ mod tests {
         // c1 sim c2 > theta, c2 sim c3 > theta, but c1 sim c3 < theta
         // theta = 0.7
         let segments = vec![
-            Segment { text: "c1".into(), embedding: vec![1.0, 0.0] },
-            Segment { text: "c2".into(), embedding: vec![0.8, 0.6] },   // sim(c1,c2) = 0.8
-            Segment { text: "c3".into(), embedding: vec![0.3, 0.95] },  // sim(c2,c3) = 0.24 + 0.57 = 0.81
-                                                                       // sim(c1,c3) = 0.3
+            Segment {
+                text: "c1".into(),
+                embedding: vec![1.0, 0.0],
+            },
+            Segment {
+                text: "c2".into(),
+                embedding: vec![0.8, 0.6],
+            }, // sim(c1,c2) = 0.8
+            Segment {
+                text: "c3".into(),
+                embedding: vec![0.3, 0.95],
+            }, // sim(c2,c3) = 0.24 + 0.57 = 0.81
+               // sim(c1,c3) = 0.3
         ];
-        
+
         let synthesizer = TopicSynthesizer::new(0.7);
         let clusters = synthesizer.synthesize(&segments);
-        
-        assert_eq!(clusters.len(), 1, "Should have 1 cluster due to transitive closure");
+
+        assert_eq!(
+            clusters.len(),
+            1,
+            "Should have 1 cluster due to transitive closure"
+        );
         let cluster = &clusters[0];
         assert!(cluster.contains(&0));
         assert!(cluster.contains(&1));
@@ -362,41 +400,57 @@ mod tests {
     #[test]
     fn test_provenance_retention() {
         let segments = vec![
-            Segment { text: "p1_c1".into(), embedding: vec![1.0, 0.0] },
-            Segment { text: "p2_c1".into(), embedding: vec![0.99, 0.01] },
+            Segment {
+                text: "p1_c1".into(),
+                embedding: vec![1.0, 0.0],
+            },
+            Segment {
+                text: "p2_c1".into(),
+                embedding: vec![0.99, 0.01],
+            },
         ];
         let paper_ids = ["paper_1".to_string(), "paper_2".to_string()];
-        
+
         let synthesizer = TopicSynthesizer::new(0.9);
         let clusters = synthesizer.synthesize(&segments);
-        
+
         // Build TopicChunks from clusters
-        let topic_chunks: Vec<crate::content::TopicChunk> = clusters.into_iter().enumerate().map(|(i, cluster)| {
-            let mut citations: Vec<String> = cluster.iter().map(|&idx| paper_ids[idx].clone()).collect();
-            citations.sort();
-            citations.dedup();
-            
-            crate::content::TopicChunk {
-                id: format!("topic_{i}"),
-                text: cluster.iter().map(|&idx| segments[idx].text.clone()).collect::<Vec<_>>().join("\n"),
-                citations,
-                source_chunks: cluster.iter().map(|&idx| {
-                    crate::content::CrossDocumentPaperChunk {
-                        paper_id: paper_ids[idx].clone(),
-                        chunk: crate::content::PaperChunk {
-                            index: idx,
-                            start_char: 0,
-                            end_char: segments[idx].text.len(),
-                            text: segments[idx].text.clone(),
-                            cluster_id: None,
-                            parent_id: None,
-                        }
-                    }
-                }).collect(),
-                cluster_embedding: vec![],
-            }
-        }).collect();
-        
+        let topic_chunks: Vec<crate::content::TopicChunk> = clusters
+            .into_iter()
+            .enumerate()
+            .map(|(i, cluster)| {
+                let mut citations: Vec<String> =
+                    cluster.iter().map(|&idx| paper_ids[idx].clone()).collect();
+                citations.sort();
+                citations.dedup();
+
+                crate::content::TopicChunk {
+                    id: format!("topic_{i}"),
+                    text: cluster
+                        .iter()
+                        .map(|&idx| segments[idx].text.clone())
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                    citations,
+                    source_chunks: cluster
+                        .iter()
+                        .map(|&idx| crate::content::CrossDocumentPaperChunk {
+                            paper_id: paper_ids[idx].clone(),
+                            chunk: crate::content::PaperChunk {
+                                index: idx,
+                                start_char: 0,
+                                end_char: segments[idx].text.len(),
+                                text: segments[idx].text.clone(),
+                                cluster_id: None,
+                                parent_id: None,
+                            },
+                        })
+                        .collect(),
+                    cluster_embedding: vec![],
+                }
+            })
+            .collect();
+
         assert_eq!(topic_chunks.len(), 1);
         assert_eq!(topic_chunks[0].citations, vec!["paper_1", "paper_2"]);
         assert_eq!(topic_chunks[0].source_chunks[0].paper_id, "paper_1");

@@ -90,14 +90,46 @@ pub fn prepare_paper(
             .min(options.chunk_chars.saturating_sub(1)),
     );
 
+    let hierarchical_chunks = options
+        .segmentation_k
+        .map(|k| {
+            let segment_texts = segments_from_text(&pruned_markdown);
+            if segment_texts.len() < 2 {
+                return Vec::new();
+            }
+            let corpus: Vec<&str> = segment_texts.iter().map(String::as_str).collect();
+            let vectorizer = crate::tfidf::TfidfVectorizer::new(&corpus);
+            let segments: Vec<crate::segmentation::Segment> = segment_texts
+                .into_iter()
+                .map(|text| crate::segmentation::Segment {
+                    embedding: vectorizer.vectorize(&text),
+                    text,
+                })
+                .collect();
+            hierarchical_chunk_text(&segments, k)
+        })
+        .filter(|v| !v.is_empty());
+
     PreparedPaper {
         paper,
         source: source.into(),
         raw_markdown,
         pruned_markdown,
         chunks,
-        hierarchical_chunks: None,
+        hierarchical_chunks,
     }
+}
+
+/// Split text into sentence-like segments for hierarchical clustering.
+/// Splits on sentence boundaries (`.`, `?`, `!`) and newlines, keeping
+/// only segments with at least 20 characters of content.
+#[must_use]
+pub fn segments_from_text(text: &str) -> Vec<String> {
+    text.split(['.', '?', '!', '\n'])
+        .map(str::trim)
+        .filter(|s| s.len() >= 20)
+        .map(str::to_string)
+        .collect()
 }
 
 /// Performs hierarchical chunking given segments and their embeddings.
@@ -106,7 +138,7 @@ pub fn hierarchical_chunk_text(
     segments: &[crate::segmentation::Segment],
     k: f32,
 ) -> Vec<HierarchicalPaperChunk> {
-    use crate::segmentation::{HierarchicalSegmenter, ClusteringOptions};
+    use crate::segmentation::{ClusteringOptions, HierarchicalSegmenter};
 
     let segmenter = HierarchicalSegmenter::new(ClusteringOptions { k });
     let clusters = segmenter.cluster(segments);
@@ -124,12 +156,14 @@ pub fn hierarchical_chunk_text(
                 if i > 0 {
                     cluster_text.push_str("\n\n");
                 }
+                let seg_start = cluster_text.chars().count();
                 cluster_text.push_str(&segment.text);
-                
+                let seg_end = cluster_text.chars().count();
+
                 cluster_segments.push(PaperChunk {
                     index: i,
-                    start_char: 0, // Simplified, actual offset calculation would be better
-                    end_char: segment.text.len(),
+                    start_char: seg_start,
+                    end_char: seg_end,
                     text: segment.text.clone(),
                     cluster_id: Some(format!("cluster_{cluster_idx}")),
                     parent_id: None,
@@ -156,16 +190,16 @@ pub fn hierarchical_chunk_text(
                 mean
             };
 
-                HierarchicalPaperChunk {
-                    index: cluster_idx,
-                    start_char: 0, // Placeholder
-                    end_char: 0,   // Placeholder
-                    text: cluster_text,
-                    segments: cluster_segments,
-                    cluster_embedding,
-                    cluster_id: Some(format!("hierarchical_{cluster_idx}")),
-                    parent_id: None,
-                }
+            HierarchicalPaperChunk {
+                index: cluster_idx,
+                start_char: 0,
+                end_char: cluster_text.chars().count(),
+                text: cluster_text,
+                segments: cluster_segments,
+                cluster_embedding,
+                cluster_id: Some(format!("hierarchical_{cluster_idx}")),
+                parent_id: None,
+            }
         })
         .collect()
 }
@@ -226,158 +260,60 @@ pub fn chunk_text(text: &str, chunk_chars: usize, chunk_overlap: usize) -> Vec<P
     if text.trim().is_empty() {
         return Vec::new();
     }
-
-    let paragraphs = split_paragraphs(text);
+    let chars: Vec<char> = text.chars().collect();
+    let n = chars.len();
     let mut chunks = Vec::new();
-    let mut current = String::new();
-    let mut current_start = 0usize;
-    let mut cursor = 0usize;
+    let mut start = 0usize;
 
-    for paragraph in paragraphs {
-        let paragraph_len = paragraph.chars().count();
-        if paragraph_len > chunk_chars {
-            if !current.trim().is_empty() {
-                push_chunk(&mut chunks, &current, current_start);
-                current.clear();
-            }
-            for part in split_long_paragraph(&paragraph, chunk_chars) {
-                let start = cursor;
-                let end = start + part.chars().count();
-                chunks.push(PaperChunk {
-                    index: chunks.len(),
-                    start_char: start,
-                    end_char: end,
-                    text: part.clone(),
-                    cluster_id: None,
-                    parent_id: None,
-                });
-                cursor = end.saturating_sub(chunk_overlap.min(end));
-            }
-            continue;
+    while start < n {
+        let end = (start + chunk_chars).min(n);
+
+        let break_point = find_break_point(&chars, start, end);
+        let actual_end = break_point.unwrap_or(end);
+
+        let chunk_text: String = chars[start..actual_end].iter().collect();
+        if !chunk_text.trim().is_empty() {
+            chunks.push(PaperChunk {
+                index: chunks.len(),
+                start_char: start,
+                end_char: actual_end,
+                text: chunk_text,
+                cluster_id: None,
+                parent_id: None,
+            });
         }
 
-        let candidate = if current.is_empty() {
-            paragraph.clone()
+        if actual_end == start {
+            start += 1;
         } else {
-            format!("{current}\n\n{paragraph}")
-        };
-
-        if candidate.chars().count() > chunk_chars && !current.is_empty() {
-            push_chunk(&mut chunks, &current, current_start);
-            cursor = current_start + current.chars().count();
-            current = paragraph;
-            current_start = cursor;
-        } else {
-            if current.is_empty() {
-                current_start = cursor;
-            }
-            current = candidate;
+            let step = actual_end - start;
+            start = actual_end.saturating_sub(chunk_overlap.min(step.saturating_sub(1)));
         }
-    }
-
-    if !current.trim().is_empty() {
-        push_chunk(&mut chunks, &current, current_start);
     }
 
     chunks
-        .into_iter()
-        .enumerate()
-        .map(|(index, mut chunk)| {
-            chunk.index = index;
-            chunk
-        })
-        .collect()
 }
 
-fn push_chunk(chunks: &mut Vec<PaperChunk>, text: &str, start_char: usize) {
-    let end_char = start_char + text.chars().count();
-    chunks.push(PaperChunk {
-        index: chunks.len(),
-        start_char,
-        end_char,
-        text: text.to_string(),
-        cluster_id: None,
-        parent_id: None,
-    });
-}
-
-fn split_paragraphs(text: &str) -> Vec<String> {
-    let mut paragraphs = Vec::new();
-    let mut current = Vec::new();
-
-    for line in text.lines() {
-        if line.trim().is_empty() {
-            if !current.is_empty() {
-                paragraphs.push(current.join("\n"));
-                current.clear();
-            }
-            continue;
-        }
-        current.push(line.to_string());
+/// Find the best break point within a chunk window: prefer double-newline
+/// (paragraph break), then sentence end (`. `), then word boundary (` `).
+/// Returns the absolute char offset to break at, or `None` if the chunk is
+/// short enough to take whole.
+fn find_break_point(chars: &[char], start: usize, end: usize) -> Option<usize> {
+    if end - start < 100 {
+        return None;
     }
-
-    if !current.is_empty() {
-        paragraphs.push(current.join("\n"));
-    }
-
-    paragraphs
-}
-
-fn split_long_paragraph(paragraph: &str, chunk_chars: usize) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut current = String::new();
-
-    for line in paragraph.lines() {
-        let line_len = line.chars().count();
-        if line_len > chunk_chars {
-            if !current.is_empty() {
-                out.push(current.trim().to_string());
-                current.clear();
-            }
-            for part in split_by_char_count(line, chunk_chars) {
-                out.push(part);
-            }
-            continue;
-        }
-
-        let candidate = if current.is_empty() {
-            line.to_string()
-        } else {
-            format!("{current}\n{line}")
-        };
-
-        if candidate.chars().count() > chunk_chars && !current.is_empty() {
-            out.push(current.trim().to_string());
-            current = line.to_string();
-        } else {
-            current = candidate;
+    let search_start = start + (end - start) * 6 / 10;
+    for i in (search_start..end.saturating_sub(1)).rev() {
+        if chars[i] == '\n' && chars.get(i + 1) == Some(&'\n') {
+            return Some(i);
         }
     }
-
-    if !current.trim().is_empty() {
-        out.push(current.trim().to_string());
-    }
-
-    out
-}
-
-fn split_by_char_count(text: &str, chunk_chars: usize) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut current = String::new();
-
-    for ch in text.chars() {
-        current.push(ch);
-        if current.chars().count() >= chunk_chars {
-            out.push(current.clone());
-            current.clear();
+    for i in (search_start..end.saturating_sub(1)).rev() {
+        if chars[i] == '.' && chars.get(i + 1) == Some(&' ') {
+            return Some(i + 1);
         }
     }
-
-    if !current.is_empty() {
-        out.push(current);
-    }
-
-    out
+    (search_start..end).rev().find(|&i| chars[i] == ' ')
 }
 
 fn collapse_blank_lines(text: &str) -> String {
@@ -404,10 +340,19 @@ fn collapse_blank_lines(text: &str) -> String {
 }
 
 fn is_reference_heading(line: &str) -> bool {
-    matches!(
-        line.to_ascii_lowercase().as_str(),
-        "references" | "# references" | "## references" | "bibliography" | "## bibliography"
-    )
+    let stripped = line
+        .trim()
+        .trim_start_matches('#')
+        .trim()
+        .to_ascii_lowercase();
+    stripped == "references"
+        || stripped == "bibliography"
+        || stripped == "acknowledgments"
+        || stripped == "acknowledgements"
+        || stripped.starts_with("references and")
+        || stripped.starts_with("references &")
+        || stripped.starts_with("references notes")
+        || stripped.starts_with("bibliography and")
 }
 
 fn is_noise_line(line: &str) -> bool {
@@ -437,6 +382,30 @@ mod tests {
         let input = "Intro\n\nReferences\n[1] one\n[2] two";
         let output = prune_markdown(input, true);
         assert_eq!(output, "Intro");
+    }
+
+    #[test]
+    fn prunes_deep_reference_headings() {
+        let input = "Intro\n\n### References\n[1] one\n[2] two";
+        assert_eq!(prune_markdown(input, true), "Intro");
+    }
+
+    #[test]
+    fn prunes_acknowledgments_section() {
+        let input = "Intro\n\n## Acknowledgments\nThanks to everyone.\n\nReferences\n[1] one";
+        assert_eq!(prune_markdown(input, true), "Intro");
+    }
+
+    #[test]
+    fn prunes_references_and_notes() {
+        let input = "Body text\n\n# References and Notes\n[1] foo";
+        assert_eq!(prune_markdown(input, true), "Body text");
+    }
+
+    #[test]
+    fn preserves_references_when_disabled() {
+        let input = "Intro\n\nReferences\n[1] one";
+        assert_eq!(prune_markdown(input, false), "Intro\n\nReferences\n[1] one");
     }
 
     #[test]

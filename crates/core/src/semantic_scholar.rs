@@ -21,6 +21,8 @@ pub struct RecommendationsResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct SsPaper {
+    #[serde(rename = "paperId", default)]
+    pub paper_id: Option<String>,
     pub title: String,
     #[serde(default)]
     pub authors: Vec<SsAuthor>,
@@ -38,16 +40,19 @@ pub struct SsAuthor {
 pub struct SsExternalIds {
     #[serde(rename = "ArXiv")]
     pub arxiv: Option<String>,
+    #[serde(rename = "DOI", default)]
+    pub doi: Option<String>,
+    #[serde(rename = "CorpusId", default)]
+    pub corpus_id: Option<u64>,
 }
 
-fn ss_paper_to_paper(p: SsPaper) -> Paper {
+fn ss_paper_to_paper(p: SsPaper) -> Option<Paper> {
     let id = p.external_ids.arxiv.clone().unwrap_or_default();
-    let url = if id.is_empty() {
-        String::new()
-    } else {
-        format!("https://arxiv.org/abs/{id}")
-    };
-    Paper {
+    if id.is_empty() {
+        return None;
+    }
+    let url = format!("https://arxiv.org/abs/{id}");
+    Some(Paper {
         id,
         title: p.title,
         authors: p
@@ -62,9 +67,9 @@ fn ss_paper_to_paper(p: SsPaper) -> Paper {
         categories: Vec::new(),
         published: p.year.map(|y| y.to_string()).unwrap_or_default(),
         url,
-        doi: None,
+        doi: p.external_ids.doi,
         journal_ref: None,
-    }
+    })
 }
 
 /// Parse a Semantic Scholar citations response JSON into a vector of papers.
@@ -78,7 +83,7 @@ pub fn parse_citations(json: &str) -> Result<Vec<Paper>, ArxivError> {
     Ok(response
         .data
         .into_iter()
-        .map(|e| ss_paper_to_paper(e.citing_paper))
+        .filter_map(|e| ss_paper_to_paper(e.citing_paper))
         .collect())
 }
 
@@ -93,7 +98,7 @@ pub fn parse_recommendations(json: &str) -> Result<Vec<Paper>, ArxivError> {
     Ok(response
         .recommended_papers
         .into_iter()
-        .map(ss_paper_to_paper)
+        .filter_map(ss_paper_to_paper)
         .collect())
 }
 
@@ -109,7 +114,8 @@ mod tests {
         "title": "Citing Paper One",
         "authors": [{"name": "Carol White"}],
         "year": 2022,
-        "externalIds": {"ArXiv": "2201.99999"}
+        "externalIds": {"ArXiv": "2201.99999"},
+        "paperId": "abc123"
       }
     }
   ]
@@ -121,7 +127,8 @@ mod tests {
       "title": "Recommended Paper",
       "authors": [{"name": "Dave Black"}],
       "year": 2023,
-      "externalIds": {"ArXiv": "2301.88888"}
+      "externalIds": {"ArXiv": "2301.88888"},
+      "paperId": "def456"
     }
   ]
 }"#;
@@ -155,19 +162,35 @@ mod tests {
     }
 
     #[test]
-    fn paper_without_arxiv_id_has_empty_url() {
+    fn parse_citations_filters_non_arxiv() {
         let json = r#"{
   "data": [{
     "citingPaper": {
       "title": "No ArXiv",
       "authors": [],
       "year": 2021,
-      "externalIds": {}
+      "externalIds": {},
+      "paperId": "xyz"
     }
   }]
 }"#;
-        let papers = parse_citations(json).expect("paper without arxiv id should parse");
-        assert_eq!(papers[0].id, "");
-        assert_eq!(papers[0].url, "");
+        let papers = parse_citations(json).expect("should parse");
+        assert!(
+            papers.is_empty(),
+            "papers without arXiv IDs should be filtered"
+        );
+    }
+
+    #[test]
+    fn parse_recommendations_filters_non_arxiv() {
+        let json = r#"{
+  "recommendedPapers": [
+    {"title": "Has ArXiv", "authors": [], "year": 2023, "externalIds": {"ArXiv": "2301.00001"}, "paperId": "abc"},
+    {"title": "No ArXiv", "authors": [], "year": 2023, "externalIds": {}, "paperId": "def"}
+  ]
+}"#;
+        let papers = parse_recommendations(json).expect("should parse");
+        assert_eq!(papers.len(), 1);
+        assert_eq!(papers[0].id, "2301.00001");
     }
 }

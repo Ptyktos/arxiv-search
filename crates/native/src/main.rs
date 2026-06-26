@@ -5,7 +5,6 @@ use rmcp::ServiceExt as _;
 use arxiv_search_rs_mcp_native::fetch::FetchClient;
 use arxiv_search_rs_mcp_native::tool::ArxivServer;
 
-
 #[derive(Parser)]
 #[command(
     name = "arxiv-search-mcp",
