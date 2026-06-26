@@ -19,7 +19,7 @@ workspace = true
 
 [dependencies]
 arxiv-search-rs-mcp-core = { path = "../core" }
-rmcp = { version = "0.10", features = ["server", "transport-io", "transport-sse-server"] }
+rmcp = { version = "0.1.5", features = ["server", "transport-io", "transport-sse-server"] }
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "hickory-dns"] }
 clap = { version = "4", features = ["derive", "env"] }
@@ -40,6 +40,7 @@ fd-lock = "4.0.4"
 regex = "1.12.3"
 
 [features]
+default = ["embedded-db"]
 embedded-db = ["dep:rusqlite"]
 
 [dev-dependencies]

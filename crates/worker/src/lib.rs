@@ -281,6 +281,7 @@ async fn handle_retrieve_paper(args: &serde_json::Value) -> std::result::Result<
             prune_references: input.prune_references,
             chunk_chars: input.chunk_chars,
             chunk_overlap: input.chunk_overlap,
+            segmentation_k: None,
         },
     );
     serde_json::to_string_pretty(&prepared).map_err(|e| e.to_string())

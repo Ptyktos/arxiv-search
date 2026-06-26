@@ -81,7 +81,7 @@ impl FetchClient {
         let _enter = span.enter();
 
         tracing::info!("Starting arXiv query for: {}", params.search_query);
-        
+
         let response_result = self
             .client
             .get(&self.api_base)
@@ -101,14 +101,14 @@ impl FetchClient {
                 if status.is_success() {
                     return response.text().await.context("failed to read response");
                 }
-                
+
                 tracing::warn!(%status, "API issue, falling back to HTML immediately");
             }
             Err(e) => {
                 tracing::error!(?e, "API request failed, falling back to HTML");
             }
         }
-        
+
         // Immediate fallback to HTML scraping if API fails or is limited
         self.scrape_arxiv_search(params).await
     }
@@ -117,8 +117,11 @@ impl FetchClient {
     pub(crate) async fn scrape_arxiv_search(&self, params: &QueryParams) -> Result<String> {
         let span = tracing::info_span!("arxiv_html_fallback");
         let _enter = span.enter();
-        
-        tracing::info!("Scraping arXiv search HTML for query: {}", params.search_query);
+
+        tracing::info!(
+            "Scraping arXiv search HTML for query: {}",
+            params.search_query
+        );
 
         let search_url = "https://arxiv.org/search/";
         // arXiv's web search doesn't like the Lucene escapes used by the API.
@@ -139,51 +142,72 @@ impl FetchClient {
             .context("HTML search fallback failed")?;
 
         let status = response.status();
-        let html = response.text().await.context("failed to read HTML search body")?;
-        
+        let html = response
+            .text()
+            .await
+            .context("failed to read HTML search body")?;
+
         // Diagnostic 'flagging' of the response for visibility in tests
         if html.contains("Rate exceeded") || html.contains("Access Denied") {
-            println!("ARXIV BLOCK DETECTED: {}", if html.contains("Rate exceeded") { "Rate exceeded" } else { "Access Denied" });
+            tracing::warn!(
+                "ARXIV BLOCK DETECTED: {}",
+                if html.contains("Rate exceeded") {
+                    "Rate exceeded"
+                } else {
+                    "Access Denied"
+                }
+            );
         }
-        
-        if html.len() > 0 {
+
+        if !html.is_empty() {
             let snippet: String = html.chars().take(200).collect();
-            println!("HTML STATUS: {} | BODY SNIPPET: {}", status, snippet);
+            tracing::debug!("HTML STATUS: {} | BODY SNIPPET: {}", status, snippet);
         }
-        
+
         let mut entries = Vec::new();
-        
-        let re_block = regex::Regex::new(r"(?is)<li class=.arxiv-result.>(.*?)</li>").unwrap();
-        let re_id = regex::Regex::new(r"(?i)arxiv:(\d+\.\d+v?\d*)").unwrap();
-        let re_title = regex::Regex::new(r#"(?is)<p class="title is-5 mathjax">\s*(.*?)\s*</p>"#).unwrap();
-        let re_authors_block = regex::Regex::new(r"(?is)<p class=.authors.>(.*?)</p>").unwrap();
-        let re_author_name = regex::Regex::new(r"(?i)<a [^>]*>(.*?)</a>").unwrap();
-        let re_abstract = regex::Regex::new(r#"(?is)<span class="abstract-full.*?">\s*(.*?)\s*</span>"#).unwrap();
-        let re_categories = regex::Regex::new(r#"(?i)<span class="tag[^>]*>(.*?)</span>"#).unwrap();
-        let re_date = regex::Regex::new(r"(?is)Submitted</span>\s*(.*?)\s*;").unwrap();
-        let re_strip = regex::Regex::new(r"<[^>]*>").unwrap();
+
+        let re_block = regex::Regex::new(r"(?is)<li class=.arxiv-result.>(.*?)</li>")?;
+        let re_id = regex::Regex::new(r"(?i)arxiv:(\d+\.\d+v?\d*)")?;
+        let re_title = regex::Regex::new(r#"(?is)<p class="title is-5 mathjax">\s*(.*?)\s*</p>"#)?;
+        let re_authors_block = regex::Regex::new(r"(?is)<p class=.authors.>(.*?)</p>")?;
+        let re_author_name = regex::Regex::new(r"(?i)<a [^>]*>(.*?)</a>")?;
+        let re_abstract =
+            regex::Regex::new(r#"(?is)<span class="abstract-full.*?">\s*(.*?)\s*</span>"#)?;
+        let re_categories = regex::Regex::new(r#"(?i)<span class="tag[^>]*>(.*?)</span>"#)?;
+        let re_date = regex::Regex::new(r"(?is)Submitted</span>\s*(.*?)\s*;")?;
+        let re_strip = regex::Regex::new(r"<[^>]*>")?;
 
         for cap in re_block.captures_iter(&html) {
             let block = &cap[1];
             let id = re_id.captures(block).map(|c| c[1].to_string());
-            let title = re_title.captures(block).map(|c| {
-                re_strip.replace_all(&c[1], "").trim().to_string()
-            });
-            let abstract_text = re_abstract.captures(block).map(|c| {
-                re_strip.replace_all(&c[1], "").trim().to_string()
-            }).unwrap_or_default();
-            let date = re_date.captures(block).map(|c| c[1].to_string()).unwrap_or_default();
-            
+            let title = re_title
+                .captures(block)
+                .map(|c| re_strip.replace_all(&c[1], "").trim().to_string());
+            let abstract_text = re_abstract
+                .captures(block)
+                .map(|c| re_strip.replace_all(&c[1], "").trim().to_string())
+                .unwrap_or_default();
+            let date = re_date
+                .captures(block)
+                .map(|c| c[1].to_string())
+                .unwrap_or_default();
+
             let mut authors_xml = String::new();
             if let Some(auth_cap) = re_authors_block.captures(block) {
                 for auth in re_author_name.captures_iter(&auth_cap[1]) {
-                    authors_xml.push_str(&format!("<author><name>{}</name></author>", &auth[1]));
+                    let _ = std::fmt::write(
+                        &mut authors_xml,
+                        format_args!("<author><name>{}</name></author>", &auth[1]),
+                    );
                 }
             }
 
             let mut categories_xml = String::new();
             for cat in re_categories.captures_iter(block) {
-                categories_xml.push_str(&format!(r#"<category term="{}" />"#, &cat[1]));
+                let _ = std::fmt::write(
+                    &mut categories_xml,
+                    format_args!(r#"<category term="{}" />"#, &cat[1]),
+                );
             }
 
             if let (Some(id), Some(title)) = (id, title) {
@@ -232,7 +256,10 @@ impl FetchClient {
             anyhow::bail!("arXiv API error: status {}", response.status());
         }
 
-        let text = response.text().await.context("failed to read arXiv response body")?;
+        let text = response
+            .text()
+            .await
+            .context("failed to read arXiv response body")?;
         let _ = self.cache.set_metadata(paper_id, &text).await;
         Ok(text)
     }
@@ -254,11 +281,11 @@ impl FetchClient {
             .send()
             .await
             .context("HTML fetch request failed")?;
-        
+
         if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Ok(None);
         }
-        
+
         let text = response
             .error_for_status()
             .context("HTML endpoint returned error status")?
@@ -291,7 +318,7 @@ impl FetchClient {
             .bytes()
             .await
             .context("failed to read PDF response body")?;
-        
+
         let bytes_vec = bytes.to_vec();
         self.cache.set_pdf(paper_id, &bytes_vec).await?;
         Ok(bytes_vec)
@@ -303,7 +330,7 @@ impl FetchClient {
     pub async fn fetch_citations(&self, paper_id: &str, limit: u32) -> Result<String> {
         let url = format!("{SS_API_BASE}/paper/ArXiv:{paper_id}/citations");
         let mut req = self.client.get(&url).query(&[
-            ("fields", "title,authors,year,externalIds"),
+            ("fields", "title,authors,year,externalIds,paperId"),
             ("limit", &limit.to_string()),
         ]);
         if let Some(key) = &self.ss_api_key {
@@ -324,10 +351,13 @@ impl FetchClient {
     /// Returns an error if the HTTP request fails.
     pub async fn fetch_recommendations(&self, paper_id: &str, limit: u32) -> Result<String> {
         let url = format!("{SS_REC_BASE}/papers/forpaper/ArXiv:{paper_id}");
-        let mut req = self
-            .client
-            .get(&url)
-            .query(&[("limit", &limit.to_string())]);
+        let mut req = self.client.get(&url).query(&[
+            ("limit", &limit.to_string()),
+            (
+                "fields",
+                &"title,authors,year,externalIds,paperId".to_string(),
+            ),
+        ]);
         if let Some(key) = &self.ss_api_key {
             req = req.header("x-api-key", key);
         }
@@ -346,9 +376,7 @@ impl FetchClient {
 mod tests {
     #![allow(clippy::expect_used)]
     use super::*;
-    use arxiv_search_rs_mcp_core::{
-        arxiv::{build_query_params, parse_response},
-    };
+    use arxiv_search_rs_mcp_core::arxiv::{build_query_params, parse_response};
     use tokio::sync::OnceCell;
 
     static GLOBAL_CLIENT: OnceCell<FetchClient> = OnceCell::const_new();
@@ -388,6 +416,7 @@ mod tests {
     }
 
     #[test]
+    #[expect(clippy::expect_used)]
     fn test_html_scraping_regex() {
         let html = r#"
     <li class="arxiv-result">
@@ -409,32 +438,48 @@ mod tests {
       </div>
     </li>
         "#;
-        
-        let re_block = regex::Regex::new(r"(?is)<li class=.arxiv-result.>(.*?)</li>").unwrap();
-        let re_id = regex::Regex::new(r"(?i)arxiv:(\d+\.\d+v?\d*)").unwrap();
-        let re_title = regex::Regex::new(r#"(?is)<p class="title is-5 mathjax">\s*(.*?)\s*</p>"#).unwrap();
-        let re_authors_block = regex::Regex::new(r"(?is)<p class=.authors.>(.*?)</p>").unwrap();
-        let re_author_name = regex::Regex::new(r"(?i)<a [^>]*>(.*?)</a>").unwrap();
-        let re_abstract = regex::Regex::new(r#"(?is)<span class="abstract-full.*?">\s*(.*?)\s*</span>"#).unwrap();
-        let re_categories = regex::Regex::new(r#"(?i)<span class="tag[^>]*>(.*?)</span>"#).unwrap();
-        let re_date = regex::Regex::new(r"(?is)Submitted</span>\s*(.*?)\s*;").unwrap();
-        let re_strip = regex::Regex::new(r"<[^>]*>").unwrap();
+
+        let re_block = regex::Regex::new(r"(?is)<li class=.arxiv-result.>(.*?)</li>")
+            .expect("regex: arxiv result block");
+        let re_id = regex::Regex::new(r"(?i)arxiv:(\d+\.\d+v?\d*)").expect("regex: arxiv ID");
+        let re_title = regex::Regex::new(r#"(?is)<p class="title is-5 mathjax">\s*(.*?)\s*</p>"#)
+            .expect("regex: arxiv title");
+        let re_authors_block =
+            regex::Regex::new(r"(?is)<p class=.authors.>(.*?)</p>").expect("regex: authors block");
+        let re_author_name =
+            regex::Regex::new(r"(?i)<a [^>]*>(.*?)</a>").expect("regex: author name");
+        let re_abstract =
+            regex::Regex::new(r#"(?is)<span class="abstract-full.*?">\s*(.*?)\s*</span>"#)
+                .expect("regex: abstract");
+        let re_categories = regex::Regex::new(r#"(?i)<span class="tag[^>]*>(.*?)</span>"#)
+            .expect("regex: category tag");
+        let re_date =
+            regex::Regex::new(r"(?is)Submitted</span>\s*(.*?)\s*;").expect("regex: submitted date");
+        let re_strip = regex::Regex::new(r"<[^>]*>").expect("regex: HTML tag");
 
         let mut entries = Vec::new();
         for cap in re_block.captures_iter(html) {
             let block = &cap[1];
             let id = re_id.captures(block).map(|c| c[1].to_string());
-            let title = re_title.captures(block).map(|c| re_strip.replace_all(&c[1], "").trim().to_string());
-            let abstract_text = re_abstract.captures(block).map(|c| re_strip.replace_all(&c[1], "").trim().to_string()).unwrap_or_default();
-            let date = re_date.captures(block).map(|c| c[1].to_string()).unwrap_or_default();
-            
+            let title = re_title
+                .captures(block)
+                .map(|c| re_strip.replace_all(&c[1], "").trim().to_string());
+            let abstract_text = re_abstract
+                .captures(block)
+                .map(|c| re_strip.replace_all(&c[1], "").trim().to_string())
+                .unwrap_or_default();
+            let date = re_date
+                .captures(block)
+                .map(|c| c[1].to_string())
+                .unwrap_or_default();
+
             let mut authors = Vec::new();
             if let Some(auth_cap) = re_authors_block.captures(block) {
                 for auth in re_author_name.captures_iter(&auth_cap[1]) {
                     authors.push(auth[1].to_string());
                 }
             }
-            
+
             let mut categories = Vec::new();
             for cat in re_categories.captures_iter(block) {
                 categories.push(cat[1].to_string());
@@ -444,10 +489,13 @@ mod tests {
                 entries.push((id, title, abstract_text, date, authors, categories));
             }
         }
-        
+
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].0, "2605.11861");
-        assert_eq!(entries[0].1, "Observation of sine-Gordon-like solitons in a spinor Bose-Einstein condensate");
+        assert_eq!(
+            entries[0].1,
+            "Observation of sine-Gordon-like solitons in a spinor Bose-Einstein condensate"
+        );
         assert_eq!(entries[0].2, "This is the full abstract text.");
         assert_eq!(entries[0].3, "12 May, 2026");
         assert_eq!(entries[0].4, vec!["Diego Conti", "Federico A. Rossi"]);
@@ -456,32 +504,60 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires network"]
+    #[expect(clippy::expect_used)]
     async fn test_scrape_arxiv_search_real() {
         let client = get_client().await;
-        let params = build_query_params("Einstein", 5, 0, None, None, &[], "relevance").unwrap();
-        
-        let xml = client.scrape_arxiv_search(&params).await.expect("HTML scraping failed");
+        let params = build_query_params("Einstein", 5, 0, None, None, &[], "relevance")
+            .expect("valid params");
+
+        let xml = client
+            .scrape_arxiv_search(&params)
+            .await
+            .expect("HTML scraping failed");
         let response = parse_response(&xml).expect("Failed to parse scraped XML");
-        
-        assert!(!response.papers.is_empty(), "Scraper returned no papers for 'Einstein'");
-        assert!(response.papers.iter().any(|p| p.title.to_lowercase().contains("einstein")), "None of the scraped papers contain 'Einstein' in the title");
+
+        assert!(
+            !response.papers.is_empty(),
+            "Scraper returned no papers for 'Einstein'"
+        );
+        assert!(
+            response
+                .papers
+                .iter()
+                .any(|p| p.title.to_lowercase().contains("einstein")),
+            "None of the scraped papers contain 'Einstein' in the title"
+        );
     }
 
     #[tokio::test]
     #[ignore = "requires network"]
+    #[expect(clippy::expect_used)]
     async fn test_real_orchestrator_fallback() {
         let mut client = get_client().await;
         // Break the API base to force the orchestrator to fall back to HTML scraping
         client.api_base = "https://broken.example.com/api".to_string();
-        
-        let params = build_query_params("Einstein", 3, 0, None, None, &[], "relevance").unwrap();
-        
+
+        let params = build_query_params("Einstein", 3, 0, None, None, &[], "relevance")
+            .expect("valid params");
+
         // This should hit the broken API, log an error, then successfully scrape arXiv.org
-        let xml = client.fetch_arxiv_query(&params).await.expect("Orchestrator fallback failed");
-        println!("FALLBACK XML: {}", xml);
+        let xml = client
+            .fetch_arxiv_query(&params)
+            .await
+            .expect("Orchestrator fallback failed");
+        tracing::debug!("FALLBACK XML: {xml}");
         let response = parse_response(&xml).expect("Failed to parse scraped XML from orchestrator");
-        
-        assert!(!response.papers.is_empty(), "Orchestrator fallback returned no papers for 'Einstein'");
-        assert!(response.papers.iter().any(|p| p.title.to_lowercase().contains("einstein")), "None of the papers contain 'Einstein'");
+
+        assert!(
+            !response.papers.is_empty(),
+            "Orchestrator fallback returned no papers for 'Einstein'"
+        );
+        assert!(
+            response
+                .papers
+                .iter()
+                .any(|p| p.title.to_lowercase().contains("einstein")),
+            "None of the papers contain 'Einstein'"
+        );
     }
 }

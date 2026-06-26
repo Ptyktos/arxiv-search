@@ -1,13 +1,37 @@
 use crate::error::ArxivError;
 
-/// Convert HTML to Markdown, extracting article content when available.
+/// Convert HTML to Markdown, extracting article content when available, and
+/// cleaning LaTeX/MathJax rendering artifacts.
 ///
 /// # Errors
 ///
 /// Returns `ArxivError::ParseError` if the HTML cannot be converted to Markdown.
 pub fn to_markdown(html: &str) -> Result<String, ArxivError> {
     let content = extract_article(html).unwrap_or(html);
-    htmd::convert(content).map_err(|e| ArxivError::ParseError(e.to_string()))
+    let md = htmd::convert(content).map_err(|e| ArxivError::ParseError(e.to_string()))?;
+    Ok(clean_latex_artifacts(&md))
+}
+
+/// Clean common LaTeX/MathJax rendering artifacts from converted markdown.
+/// These appear when htmd processes arXiv's MathJax-laden HTML.
+fn clean_latex_artifacts(text: &str) -> String {
+    text.replace("\\\\", "\\")
+        .replace("italic\\_", "_")
+        .replace("italic_", "_")
+        .replace("POSTSUBSCRIPT", "")
+        .replace("POSTSUPERSCRIPT", "")
+        .replace("startsubscript", "")
+        .replace("endsubscript", "")
+        .replace("start_SUP", "")
+        .replace("end_SUP", "")
+        .replace("start_POST", "")
+        .replace("end_POST", "")
+        .replace("start^{", "{")
+        .replace("end^{", "}")
+        .replace("start_{", "{")
+        .replace("end_{", "}")
+        .replace("\\ \\ ", " ")
+        .replace("  ", " ")
 }
 
 fn extract_article(html: &str) -> Option<&str> {
@@ -59,5 +83,23 @@ mod tests {
         assert!(extracted.starts_with("<article"));
         assert!(extracted.ends_with("</article>"));
         assert!(!extracted.contains("footer"));
+    }
+
+    #[test]
+    fn cleans_latex_escape_artifacts() {
+        let input = "The wavefunction \\\\psi satisfies \\\\nabla^2 \\\\psi = 0";
+        let cleaned = clean_latex_artifacts(input);
+        assert!(
+            !cleaned.contains("\\\\\\\\"),
+            "should collapse double-escapes"
+        );
+    }
+
+    #[test]
+    fn cleans_mathjax_post_markers() {
+        let input = "E = mc{POSTSUPERSCRIPT}2{end_POST}";
+        let cleaned = clean_latex_artifacts(input);
+        assert!(!cleaned.contains("POSTSUPERSCRIPT"));
+        assert!(!cleaned.contains("POST"));
     }
 }
