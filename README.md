@@ -1,5 +1,7 @@
 # arxiv-search-rs-mcp
 
+![arxiv-search artwork](assets/social-card.png)
+
 Rust MCP server for arXiv search and paper retrieval. The repository exposes several MCP tools and follows a split architecture:
 
 - `crates/native` for the local binary and stdio/SSE MCP transport
