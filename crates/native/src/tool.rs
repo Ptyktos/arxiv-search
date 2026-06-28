@@ -698,44 +698,25 @@ impl ArxivServer {
         Ok(CallToolResult::success(vec![Content::text(out)]))
     }
 
-    #[tool(description = "Batch fetch: abstracts, full text, citations, or recommendations.")]
+    #[tool(description = "Fetch abstract, full text, citations, or recommendations for a paper.")]
     async fn execute(
         &self,
-        Parameters(raw): Parameters<Value>,
+        Parameters(op): Parameters<Operation>,
     ) -> Result<CallToolResult, McpError> {
         let span = tracing::info_span!("mcp_tool_execute");
         let _enter = span.enter();
-
-        let ops: Vec<Operation> = if raw.is_array() {
-            serde_json::from_value(raw)
-                .map_err(|e| McpError::invalid_params(format!("invalid operation: {e}"), None))?
-        } else {
-            vec![serde_json::from_value(raw)
-                .map_err(|e| McpError::invalid_params(format!("invalid operation: {e}"), None))?]
-        };
-
-        let mut results = Vec::with_capacity(ops.len());
-        for op in ops {
-            let id = op.id.clone();
-            let op_name = op.op.clone();
-            let result = self.run_operation(op).await;
-            results.push(serde_json::json!({
-                "id": id,
-                "op": op_name,
-                "result": match result {
-                    Ok(v) => v,
-                    Err(e) => serde_json::json!({"error": e.to_string()}),
-                }
-            }));
-        }
-
-        let out = if results.len() == 1 {
-            serde_json::to_string_pretty(&results[0])
-        } else {
-            serde_json::to_string_pretty(&results)
-        };
-        let out = out.map_err(|e| McpError::internal_error(e.to_string(), None))?;
-
+        let id = op.id.clone();
+        let op_name = op.op.clone();
+        let result = self.run_operation(op).await;
+        let out = serde_json::to_string_pretty(&serde_json::json!({
+            "id": id,
+            "op": op_name,
+            "result": match result {
+                Ok(v) => v,
+                Err(e) => serde_json::json!({"error": e.to_string()}),
+            }
+        }))
+        .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![Content::text(out)]))
     }
 
