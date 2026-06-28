@@ -208,9 +208,9 @@ struct SearchInput {
     offset: u32,
     from: Option<String>,
     to: Option<String>,
-    #[serde(default)]
+    #[serde(alias = "categories", default)]
     cats: Vec<String>,
-    #[serde(default = "default_sort")]
+    #[serde(alias = "sort_by", default = "default_sort")]
     sort: String,
 }
 

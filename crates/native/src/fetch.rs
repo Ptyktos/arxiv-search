@@ -124,15 +124,22 @@ impl FetchClient {
         );
 
         let search_url = "https://arxiv.org/search/";
-        // arXiv's web search doesn't like the Lucene escapes used by the API.
-        // We use the raw search_query from the params.
+        // The web search interface does not understand Lucene field qualifiers or boolean
+        // operators — send the original plain-text user query instead of the API's Lucene
+        // search_query.  Sort order: web search uses "-relevance" for best-match or
+        // "-announced_date_first" for newest-first.
+        let order = if params.sort_by == "submittedDate" {
+            "-announced_date_first"
+        } else {
+            "-relevance"
+        };
         let response = self.client.get(search_url)
             .query(&[
-                ("query", params.search_query.as_str()),
+                ("query", params.raw_query.as_str()),
                 ("searchtype", "all"),
                 ("abstracts", "show"),
                 ("size", "50"), // arXiv web search requires standard sizes (25, 50, 100)
-                ("order", "-announced_date_first"),
+                ("order", order),
             ])
             .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
             .header("Accept-Language", "en-US,en;q=0.9")

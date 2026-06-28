@@ -88,10 +88,10 @@ struct SearchInput {
     /// Filter results by end date (YYYY-MM-DD).
     to: Option<String>,
     /// arXiv categories to search in (e.g., cs.AI, physics.gen-ph).
-    #[serde(default)]
+    #[serde(alias = "categories", default)]
     cats: Vec<String>,
     /// Sort strategy: "relevance" or "date" (default: "relevance").
-    #[serde(default = "default_sort")]
+    #[serde(alias = "sort_by", default = "default_sort")]
     sort: String,
 }
 

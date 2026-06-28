@@ -5,7 +5,10 @@ use crate::paper::Paper;
 
 /// Query parameters for searching arXiv.
 pub struct QueryParams {
+    /// Full Lucene query string for the Atom API (may include field qualifiers and boolean operators).
     pub search_query: String,
+    /// Plain-text user query, stripped of Lucene decorations, for the HTML web-search fallback.
+    pub raw_query: String,
     pub max_results: u32,
     pub start: u32,
     pub sort_by: String,
@@ -65,6 +68,53 @@ fn sanitize_lucene_query(q: &str) -> String {
     out
 }
 
+/// Convert a plain-text query to explicit AND semantics.
+///
+/// The arXiv Lucene backend defaults to OR between unqualified terms, so
+/// `GLiNER model NER` matches the entire corpus.  If the query has no field
+/// qualifiers (`:`) and no explicit boolean operators, this function inserts
+/// `AND` between whitespace-separated tokens while respecting quoted phrases.
+fn qualify_query(q: &str) -> String {
+    let upper = q.to_uppercase();
+    if q.contains(':')
+        || upper.contains(" AND ")
+        || upper.contains(" OR ")
+        || upper.contains(" ANDNOT ")
+    {
+        return q.to_string();
+    }
+
+    let mut terms: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    for ch in q.chars() {
+        match ch {
+            '"' => {
+                in_quotes = !in_quotes;
+                current.push(ch);
+            }
+            ' ' if !in_quotes => {
+                let t = current.trim().to_string();
+                if !t.is_empty() {
+                    terms.push(t);
+                }
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+    let t = current.trim().to_string();
+    if !t.is_empty() {
+        terms.push(t);
+    }
+
+    if terms.len() <= 1 {
+        q.to_string()
+    } else {
+        terms.join(" AND ")
+    }
+}
+
 /// Build arXiv query parameters from search criteria.
 ///
 /// # Errors
@@ -79,7 +129,7 @@ pub fn build_query_params(
     categories: &[String],
     sort_by: &str,
 ) -> Result<QueryParams, ArxivError> {
-    let mut q = sanitize_lucene_query(query);
+    let mut q = qualify_query(&sanitize_lucene_query(query));
 
     if !categories.is_empty() {
         let cat_filter = categories
@@ -110,6 +160,7 @@ pub fn build_query_params(
 
     Ok(QueryParams {
         search_query: q,
+        raw_query: query.to_string(),
         max_results: max_results.clamp(1, 50),
         start: offset,
         sort_by: sort_by_param.to_string(),
@@ -371,10 +422,60 @@ mod tests {
     }
 
     #[test]
+    fn qualify_plain_text_adds_and() {
+        assert_eq!(
+            qualify_query("attention mechanism"),
+            "attention AND mechanism"
+        );
+        assert_eq!(
+            qualify_query("GLiNER model NER"),
+            "GLiNER AND model AND NER"
+        );
+    }
+
+    #[test]
+    fn qualify_respects_quoted_phrases() {
+        assert_eq!(
+            qualify_query(r#"GLiNER "named entity recognition""#),
+            r#"GLiNER AND "named entity recognition""#
+        );
+        // Quoted-only query is a single token — no AND added.
+        assert_eq!(
+            qualify_query(r#""named entity recognition""#),
+            r#""named entity recognition""#
+        );
+    }
+
+    #[test]
+    fn qualify_leaves_field_qualified_query_unchanged() {
+        assert_eq!(qualify_query("ti:attention"), "ti:attention");
+        assert_eq!(
+            qualify_query("ti:attention AND au:vaswani"),
+            "ti:attention AND au:vaswani"
+        );
+        assert_eq!(
+            qualify_query("all:GLiNER cat:cs.CL"),
+            "all:GLiNER cat:cs.CL"
+        );
+    }
+
+    #[test]
+    fn qualify_leaves_explicit_boolean_unchanged() {
+        assert_eq!(
+            qualify_query("attention OR transformer"),
+            "attention OR transformer"
+        );
+        assert_eq!(
+            qualify_query("attention ANDNOT transformer"),
+            "attention ANDNOT transformer"
+        );
+    }
+
+    #[test]
     fn basic_query() {
         let p = build_query_params("attention mechanism", 10, 0, None, None, &[], "relevance")
             .expect("valid query params");
-        assert_eq!(p.search_query, "attention mechanism");
+        assert_eq!(p.search_query, "attention AND mechanism");
         assert_eq!(p.max_results, 10);
         assert_eq!(p.start, 0);
         assert_eq!(p.sort_by, "relevance");
