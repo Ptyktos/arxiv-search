@@ -1,14 +1,16 @@
 use std::future::Future;
 
 use rmcp::{
+    handler::server::wrapper::Parameters,
     model::{
-        Annotated, CallToolResult, Content, ListResourcesResult, PaginatedRequestParam,
-        RawResource, ReadResourceRequestParam, ReadResourceResult, ResourceContents,
+        Annotated, CallToolResult, Content, ListResourcesResult, PaginatedRequestParams,
+        RawResource, ReadResourceRequestParams, ReadResourceResult, ResourceContents,
         ServerCapabilities, ServerInfo,
     },
     service::RequestContext,
-    tool, Error as McpError, RoleServer, ServerHandler,
+    tool, tool_handler, tool_router, ErrorData as McpError, RoleServer, ServerHandler,
 };
+use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -198,7 +200,7 @@ components:
 
 const OPENAPI_URI: &str = "arxiv://openapi";
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 struct SearchInput {
     #[serde(alias = "query")]
     q: String,
@@ -222,7 +224,7 @@ fn default_sort() -> String {
     "relevance".to_string()
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 struct Operation {
     op: String,
     #[serde(alias = "paper_id")]
@@ -234,10 +236,10 @@ struct Operation {
     chunk_chars: usize,
     #[serde(default = "default_chunk_overlap")]
     chunk_overlap: usize,
-    pub segmentation_k: Option<f32>,
+    segmentation_k: Option<f32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 pub struct RetrieveInput {
     #[serde(alias = "id", alias = "arxiv_id")]
     pub paper_id: String,
@@ -250,7 +252,7 @@ pub struct RetrieveInput {
     pub segmentation_k: Option<f32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 struct HdrrInput {
     #[serde(alias = "query")]
     q: String,
@@ -260,7 +262,7 @@ struct HdrrInput {
     limit_chunks: usize,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, JsonSchema)]
 struct IngestInput {
     #[serde(alias = "ids")]
     paper_ids: Vec<String>,
@@ -355,24 +357,24 @@ impl ArxivServer {
     }
 
     /// Try HTML first, fall back to PDF, return a helpful error if both fail.
-    async fn fetch_full_text(&self, id: &str) -> Result<(&'static str, String), rmcp::Error> {
+    async fn fetch_full_text(&self, id: &str) -> Result<(&'static str, String), McpError> {
         if let Some(html) = self
             .client
             .fetch_html(id)
             .await
-            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?
         {
             let md =
-                to_markdown(&html).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+                to_markdown(&html).map_err(|e| McpError::internal_error(e.to_string(), None))?;
             return Ok(("html", md));
         }
         match self.client.fetch_pdf(id).await {
             Ok(bytes) => {
                 let text = extract_text(&bytes)
-                    .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
                 Ok(("pdf", text))
             }
-            Err(e) => Err(rmcp::Error::internal_error(
+            Err(e) => Err(McpError::internal_error(
                 format!(
                     "No full text available for {id}: HTML not found and PDF fetch failed ({e}). \
                          Use the 'abstract' op via the execute tool to get metadata only."
@@ -382,9 +384,9 @@ impl ArxivServer {
         }
     }
 
-    async fn run_operation(&self, op: Operation) -> Result<Value, rmcp::Error> {
+    async fn run_operation(&self, op: Operation) -> Result<Value, McpError> {
         let id = normalize_paper_id(&op.id)
-            .map_err(|e| rmcp::Error::invalid_params(e.to_string(), None))?;
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
 
         match op.op.as_str() {
             "abstract" => {
@@ -392,15 +394,15 @@ impl ArxivServer {
                     .client
                     .fetch_arxiv_by_id(&id)
                     .await
-                    .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
                 let response = parse_response(&xml)
-                    .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
                 let paper = response.papers
                     .into_iter()
                     .next()
-                    .ok_or_else(|| rmcp::Error::internal_error(format!("{id} not found"), None))?;
+                    .ok_or_else(|| McpError::internal_error(format!("{id} not found"), None))?;
                 serde_json::to_value(paper)
-                    .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))
             }
             "download" => {
                 let (_, text) = self.fetch_full_text(&id).await?;
@@ -412,11 +414,11 @@ impl ArxivServer {
                     .client
                     .fetch_citations(&id, limit)
                     .await
-                    .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
                 let papers = parse_citations(&json)
-                    .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
                 serde_json::to_value(papers)
-                    .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))
             }
             "recs" => {
                 let limit = op.limit.unwrap_or(10).clamp(1, 50);
@@ -424,11 +426,11 @@ impl ArxivServer {
                     .client
                     .fetch_recommendations(&id, limit)
                     .await
-                    .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
                 let papers = parse_recommendations(&json)
-                    .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))?;
                 serde_json::to_value(papers)
-                    .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))
             }
             "retrieve" => {
                 let (source, text) = self.fetch_full_text(&id).await?;
@@ -449,9 +451,9 @@ impl ArxivServer {
                 format_hierarchical_chunks(&mut prepared);
 
                 serde_json::to_value(prepared)
-                    .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))
+                    .map_err(|e| McpError::internal_error(e.to_string(), None))
             }
-            unknown => Err(rmcp::Error::invalid_params(
+            unknown => Err(McpError::invalid_params(
                 format!("unknown op \"{unknown}\"; valid: abstract, download, citations, recs, retrieve"),
                 None,
             )),
@@ -464,9 +466,9 @@ impl ArxivServer {
     /// # Errors
     /// Returns an error if the paper ID is invalid, the arXiv API is unreachable,
     /// or neither HTML nor PDF full text is available.
-    pub async fn run_retrieve(&self, input: RetrieveInput) -> Result<Value, rmcp::Error> {
+    pub async fn run_retrieve(&self, input: RetrieveInput) -> Result<Value, McpError> {
         let id = normalize_paper_id(&input.paper_id)
-            .map_err(|e| rmcp::Error::invalid_params(e.to_string(), None))?;
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
 
         // Fetch metadata first so the DB stores real title/abstract for HDRR routing
         let paper = self.fetch_paper_metadata(&id).await;
@@ -506,12 +508,12 @@ impl ArxivServer {
 
         format_hierarchical_chunks(&mut prepared);
 
-        serde_json::to_value(prepared).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))
+        serde_json::to_value(prepared).map_err(|e| McpError::internal_error(e.to_string(), None))
     }
 
-    fn run_hdrr(&self, input: &HdrrInput) -> Result<Value, rmcp::Error> {
+    fn run_hdrr(&self, input: &HdrrInput) -> Result<Value, McpError> {
         #[cfg(not(feature = "embedded-db"))]
-        return Err(rmcp::Error::internal_error(
+        return Err(McpError::internal_error(
             "embedded-db feature not enabled",
             None,
         ));
@@ -522,12 +524,12 @@ impl ArxivServer {
                 .client
                 .db
                 .as_ref()
-                .ok_or_else(|| rmcp::Error::internal_error("Database not initialized", None))?;
+                .ok_or_else(|| McpError::internal_error("Database not initialized", None))?;
 
             // Stage 1: Document-level routing P(D|q)
             let routed_docs = db
                 .route_documents(&input.q, input.limit_docs)
-                .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+                .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
             if routed_docs.is_empty() {
                 return Ok(serde_json::json!({
@@ -544,7 +546,7 @@ impl ArxivServer {
 
             let chunks = db
                 .retrieve_chunks_scoped(&input.q, &routed_docs, input.limit_chunks)
-                .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+                .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
             Ok(serde_json::json!({
                 "query": input.q,
@@ -557,7 +559,7 @@ impl ArxivServer {
     }
 
     /// Bulk-ingest: fetch metadata + full text + store in DB for HDRR.
-    async fn run_ingest(&self, input: IngestInput) -> Result<Value, rmcp::Error> {
+    async fn run_ingest(&self, input: IngestInput) -> Result<Value, McpError> {
         let mut ingested = 0usize;
         let mut errors = Vec::new();
 
@@ -622,21 +624,15 @@ impl ArxivServer {
     }
 }
 
-#[tool(tool_box)]
+#[tool_router]
 impl ArxivServer {
     #[tool(description = "Search arXiv papers with filters (categories, dates, sorting).")]
     async fn search(
         &self,
-        #[tool(param)]
-        #[schemars(
-            description = "JSON object with query string 'q' (or 'query'). See arxiv://openapi for full schema."
-        )]
-        code: String,
-    ) -> Result<CallToolResult, rmcp::Error> {
+        Parameters(input): Parameters<SearchInput>,
+    ) -> Result<CallToolResult, McpError> {
         let span = tracing::info_span!("mcp_tool_search");
         let _enter = span.enter();
-        let input: SearchInput = serde_json::from_str(&code)
-            .map_err(|e| rmcp::Error::invalid_params(format!("invalid JSON: {e}"), None))?;
 
         tracing::info!("arXiv search: q='{}', n={}", input.q, input.n);
 
@@ -649,7 +645,7 @@ impl ArxivServer {
             &input.cats,
             &input.sort,
         )
-        .map_err(|e| rmcp::Error::invalid_params(e.to_string(), None))?;
+        .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
 
         tracing::debug!("arXiv query params: {:?}", params.search_query);
 
@@ -657,17 +653,17 @@ impl ArxivServer {
             .client
             .fetch_arxiv_query(&params)
             .await
-            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
         tracing::info!("arXiv search: received {} bytes", xml.len());
 
         let response =
-            parse_response(&xml).map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+            parse_response(&xml).map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
         tracing::info!("arXiv search: parsed {} papers", response.papers.len());
 
         let out = serde_json::to_string_pretty(&response)
-            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
         Ok(CallToolResult::success(vec![Content::text(out)]))
     }
@@ -677,19 +673,13 @@ impl ArxivServer {
     )]
     async fn retrieve_paper(
         &self,
-        #[tool(param)]
-        #[schemars(
-            description = "JSON object with 'paper_id' (or 'id'). See arxiv://openapi for full schema."
-        )]
-        code: String,
-    ) -> Result<CallToolResult, rmcp::Error> {
+        Parameters(input): Parameters<RetrieveInput>,
+    ) -> Result<CallToolResult, McpError> {
         let span = tracing::info_span!("mcp_tool_retrieve_paper");
         let _enter = span.enter();
-        let input: RetrieveInput = serde_json::from_str(&code)
-            .map_err(|e| rmcp::Error::invalid_params(format!("invalid JSON: {e}"), None))?;
         let out = self.run_retrieve(input).await?;
         let out = serde_json::to_string_pretty(&out)
-            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![Content::text(out)]))
     }
 
@@ -698,48 +688,30 @@ impl ArxivServer {
     )]
     async fn hdrr(
         &self,
-        #[tool(param)]
-        #[schemars(
-            description = "JSON object with query string 'q' (or 'query'). See arxiv://openapi for full schema."
-        )]
-        code: String,
-    ) -> Result<CallToolResult, rmcp::Error> {
+        Parameters(input): Parameters<HdrrInput>,
+    ) -> Result<CallToolResult, McpError> {
         let span = tracing::info_span!("mcp_tool_hdrr");
         let _enter = span.enter();
-        let input: HdrrInput = serde_json::from_str(&code)
-            .map_err(|e| rmcp::Error::invalid_params(format!("invalid JSON: {e}"), None))?;
         let out = self.run_hdrr(&input)?;
         let out = serde_json::to_string_pretty(&out)
-            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
-
-        // Satisfy clippy lints
-        tokio::task::yield_now().await;
-        drop(code);
-
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![Content::text(out)]))
     }
 
     #[tool(description = "Batch fetch: abstracts, full text, citations, or recommendations.")]
     async fn execute(
         &self,
-        #[tool(param)]
-        #[schemars(
-            description = "JSON Operation with 'id' and 'op'. See arxiv://openapi for full schema."
-        )]
-        code: String,
-    ) -> Result<CallToolResult, rmcp::Error> {
+        Parameters(raw): Parameters<Value>,
+    ) -> Result<CallToolResult, McpError> {
         let span = tracing::info_span!("mcp_tool_execute");
         let _enter = span.enter();
-        let raw: Value = serde_json::from_str(&code)
-            .map_err(|e| rmcp::Error::invalid_params(format!("invalid JSON: {e}"), None))?;
 
         let ops: Vec<Operation> = if raw.is_array() {
             serde_json::from_value(raw)
-                .map_err(|e| rmcp::Error::invalid_params(format!("invalid operation: {e}"), None))?
+                .map_err(|e| McpError::invalid_params(format!("invalid operation: {e}"), None))?
         } else {
-            vec![serde_json::from_value(raw).map_err(|e| {
-                rmcp::Error::invalid_params(format!("invalid operation: {e}"), None)
-            })?]
+            vec![serde_json::from_value(raw)
+                .map_err(|e| McpError::invalid_params(format!("invalid operation: {e}"), None))?]
         };
 
         let mut results = Vec::with_capacity(ops.len());
@@ -762,7 +734,7 @@ impl ArxivServer {
         } else {
             serde_json::to_string_pretty(&results)
         };
-        let out = out.map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+        let out = out.map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
         Ok(CallToolResult::success(vec![Content::text(out)]))
     }
@@ -772,55 +744,52 @@ impl ArxivServer {
     )]
     async fn ingest_corpus(
         &self,
-        #[tool(param)]
-        #[schemars(
-            description = "JSON with 'paper_ids' (string array). Example: {\"paper_ids\":[\"2206.06912\",\"2505.05861\"]}"
-        )]
-        code: String,
-    ) -> Result<CallToolResult, rmcp::Error> {
+        Parameters(input): Parameters<IngestInput>,
+    ) -> Result<CallToolResult, McpError> {
         let span = tracing::info_span!("mcp_tool_ingest_corpus");
         let _enter = span.enter();
-        let input: IngestInput = serde_json::from_str(&code)
-            .map_err(|e| rmcp::Error::invalid_params(format!("invalid JSON: {e}"), None))?;
         let out_value = self.run_ingest(input).await?;
         let out = serde_json::to_string_pretty(&out_value)
-            .map_err(|e| rmcp::Error::internal_error(e.to_string(), None))?;
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![Content::text(out)]))
     }
 }
 
-#[tool(tool_box)]
+#[tool_handler]
 impl ServerHandler for ArxivServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            capabilities: ServerCapabilities::builder()
+        ServerInfo::new(
+            ServerCapabilities::builder()
                 .enable_tools()
                 .enable_resources()
                 .build(),
-            server_info: rmcp::model::Implementation {
-                name: "arxiv-search-mcp".into(),
-                version: env!("CARGO_PKG_VERSION").into(),
-            },
-            ..Default::default()
-        }
+        )
+        .with_server_info(rmcp::model::Implementation::new(
+            "arxiv-search-mcp",
+            env!("CARGO_PKG_VERSION"),
+        ))
     }
 
     fn list_resources(
         &self,
-        _request: PaginatedRequestParam,
+        _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ListResourcesResult, McpError>> + Send + '_ {
         std::future::ready(Ok(ListResourcesResult {
+            meta: None,
             resources: vec![Annotated {
                 raw: RawResource {
                     uri: OPENAPI_URI.to_string(),
                     name: "arXiv MCP OpenAPI Schema".to_string(),
+                    title: None,
                     description: Some(
                         "OpenAPI 3.0 schema for search, retrieve, and legacy execute inputs."
                             .to_string(),
                     ),
                     mime_type: Some("application/yaml".to_string()),
                     size: u32::try_from(OPENAPI_SPEC.len()).ok(),
+                    icons: None,
+                    meta: None,
                 },
                 annotations: None,
             }],
@@ -830,17 +799,18 @@ impl ServerHandler for ArxivServer {
 
     fn read_resource(
         &self,
-        request: ReadResourceRequestParam,
+        request: ReadResourceRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ReadResourceResult, McpError>> + Send + '_ {
         let result = if request.uri == OPENAPI_URI {
-            Ok(ReadResourceResult {
-                contents: vec![ResourceContents::TextResourceContents {
+            Ok(ReadResourceResult::new(vec![
+                ResourceContents::TextResourceContents {
                     uri: OPENAPI_URI.to_string(),
                     mime_type: Some("application/yaml".to_string()),
                     text: OPENAPI_SPEC.to_string(),
-                }],
-            })
+                    meta: None,
+                },
+            ]))
         } else {
             Err(McpError::resource_not_found(
                 format!("unknown resource: {}", request.uri),
