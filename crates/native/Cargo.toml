@@ -19,14 +19,14 @@ workspace = true
 
 [dependencies]
 arxiv-search-rs-mcp-core = { path = "../core" }
-rmcp = { version = "0.1.5", features = ["server", "transport-io", "transport-sse-server"] }
+rmcp = { version = "1.8.0", features = ["server", "transport-io", "transport-streamable-http-server", "transport-streamable-http-server-session"] }
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "hickory-dns"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
 clap = { version = "4", features = ["derive", "env"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
-schemars = "0.8"
+schemars = "1.0"
 axum = "0.8"
 tower-http = { version = "0.6", features = ["cors"] }
 serde_json = "1"

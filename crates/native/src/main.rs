@@ -13,7 +13,7 @@ use arxiv_search_rs_mcp_native::tool::ArxivServer;
                   The native binary is for local MCP clients and Claude Desktop; the repo also \
                   includes a Cloudflare Worker entrypoint under crates/worker.\n\n\
                   Use --stdio for Claude Desktop and local MCP clients.\n\
-                  Default: HTTP/SSE server.\n\n\
+                  Default: Streamable HTTP server (MCP 2025-03-26) on POST /mcp.\n\n\
                   Optional env vars:\n\
                   SEMANTIC_SCHOLAR_API_KEY — raises Semantic Scholar rate limits."
 )]
@@ -51,7 +51,7 @@ async fn main() -> Result<()> {
     if cli.stdio {
         tracing::info!("Starting in stdio mode");
         let service = server
-            .serve(rmcp::transport::stdio())
+            .serve(rmcp::transport::io::stdio())
             .await
             .context("Failed to initialise stdio transport")?;
         service
@@ -60,40 +60,42 @@ async fn main() -> Result<()> {
             .context("stdio server exited with error")?;
     } else {
         let addr = format!("{}:{}", cli.host, cli.port);
-        tracing::info!("Starting HTTP/SSE server on http://{addr}");
-        run_sse_server(server, &addr).await?;
+        tracing::info!("Starting Streamable HTTP server on http://{addr}/mcp");
+        run_http_server(server, &addr).await?;
     }
 
     Ok(())
 }
 
-async fn run_sse_server(server: ArxivServer, addr: &str) -> Result<()> {
-    use rmcp::transport::sse_server::{SseServer, SseServerConfig};
+async fn run_http_server(server: ArxivServer, addr: &str) -> Result<()> {
+    use rmcp::transport::streamable_http_server::{
+        session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
+    };
     use tokio_util::sync::CancellationToken;
 
     let bind: std::net::SocketAddr = addr.parse().context("Invalid bind address")?;
     let ct = CancellationToken::new();
 
-    let config = SseServerConfig {
-        bind,
-        sse_path: "/sse".to_string(),
-        post_path: "/message".to_string(),
-        ct: ct.clone(),
-    };
+    let config = StreamableHttpServerConfig::default().with_cancellation_token(ct.child_token());
 
-    let sse_server = SseServer::serve_with_config(config)
+    let service: StreamableHttpService<ArxivServer, LocalSessionManager> =
+        StreamableHttpService::new(
+            move || Ok(server.clone()),
+            std::sync::Arc::default(),
+            config,
+        );
+
+    let router = axum::Router::new().nest_service("/mcp", service);
+    let listener = tokio::net::TcpListener::bind(bind)
         .await
-        .context("Failed to start SSE server")?;
+        .context("Failed to bind TCP listener")?;
 
-    tracing::info!("Listening on http://{addr} — SSE: /sse, messages: /message");
+    tracing::info!("Listening on http://{addr}/mcp");
 
-    let _service_guard = sse_server.with_service(move || server.clone());
-
-    tokio::signal::ctrl_c()
+    axum::serve(listener, router)
+        .with_graceful_shutdown(async move { ct.cancelled_owned().await })
         .await
-        .context("Failed to listen for ctrl-c")?;
-    tracing::info!("Shutting down");
-    ct.cancel();
+        .context("HTTP server error")?;
 
     Ok(())
 }
