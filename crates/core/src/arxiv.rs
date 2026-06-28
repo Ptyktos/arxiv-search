@@ -423,7 +423,10 @@ mod tests {
 
     #[test]
     fn qualify_plain_text_adds_and() {
-        assert_eq!(qualify_query("attention mechanism"), "attention AND mechanism");
+        assert_eq!(
+            qualify_query("attention mechanism"),
+            "attention AND mechanism"
+        );
         assert_eq!(
             qualify_query("GLiNER model NER"),
             "GLiNER AND model AND NER"
