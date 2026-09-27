@@ -40,7 +40,6 @@ impl FetchClient {
     ///
     /// Returns an error if the HTTP client fails to build.
     pub async fn new(ss_api_key: Option<String>) -> Result<Self> {
-        #[expect(clippy::duration_suboptimal_units)]
         let client = Client::builder()
             .user_agent("curl/8.20.0")
             .timeout(Duration::from_secs(15))

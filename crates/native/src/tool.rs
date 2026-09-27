@@ -736,6 +736,7 @@ impl ArxivServer {
     }
 }
 
+#[expect(clippy::unused_async_trait_impl)]
 #[tool_handler]
 impl ServerHandler for ArxivServer {
     fn get_info(&self) -> ServerInfo {
