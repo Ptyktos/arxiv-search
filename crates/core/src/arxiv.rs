@@ -285,7 +285,7 @@ pub fn parse_response(xml: &str) -> Result<ArxivResponse, ArxivError> {
                         for attr in e.attributes().flatten() {
                             if attr.key.as_ref() == b"term" {
                                 let term = attr
-                                    .unescape_value()
+                                    .normalized_value(quick_xml::XmlVersion::Implicit1_0)
                                     .map_err(|err| ArxivError::ParseError(err.to_string()))?
                                     .into_owned();
                                 b.categories.push(term);
@@ -303,7 +303,7 @@ pub fn parse_response(xml: &str) -> Result<ArxivResponse, ArxivError> {
                                 }
                                 b"href" => {
                                     href = attr
-                                        .unescape_value()
+                                        .normalized_value(quick_xml::XmlVersion::Implicit1_0)
                                         .map_err(|err| ArxivError::ParseError(err.to_string()))?
                                         .into_owned();
                                 }
@@ -318,7 +318,7 @@ pub fn parse_response(xml: &str) -> Result<ArxivResponse, ArxivError> {
             }
             Ok(Event::Text(e)) => {
                 let text = e
-                    .unescape()
+                    .decode()
                     .map_err(|err| ArxivError::ParseError(err.to_string()))?
                     .into_owned();
 
