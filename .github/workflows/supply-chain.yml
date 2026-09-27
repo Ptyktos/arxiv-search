@@ -1,0 +1,101 @@
+name: Supply chain
+
+on:
+  pull_request:
+    paths:
+      - "**/*.toml"
+      - "**/*.lock"
+      - "crates/**"
+      - ".github/workflows/supply-chain.yml"
+      - "deny.toml"
+  push:
+    branches: [master]
+  schedule:
+    - cron: "13 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: RustSec audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        run: cargo install --locked cargo-audit
+      - run: cargo audit --deny warnings
+
+  deny:
+    name: Dependency policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-deny
+        run: cargo install --locked cargo-deny --version 0.19.4
+      - name: Check dependency policy
+        run: cargo deny check advisories bans licenses sources
+
+  sbom:
+    name: CycloneDX SBOM
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-cyclonedx
+        run: cargo install --locked cargo-cyclonedx
+      - name: Generate SBOM
+        run: cargo cyclonedx --format json --output-filename arxiv-search.sbom.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: arxiv-search-cyclonedx-sbom
+          path: arxiv-search.sbom.json
+          retention-days: 90
+
+  evidence:
+    name: Caretaker evidence
+    if: always()
+    needs: [audit, deny, sbom]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Write caretaker evidence
+        env:
+          AUDIT_RESULT: ${{ needs.audit.result }}
+          DENY_RESULT: ${{ needs.deny.result }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          mkdir -p evidence
+          python3 - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          payload = {
+              "event": "ptyktos.supply_chain.audit",
+              "ts": datetime.now(timezone.utc).isoformat(),
+              "repo": os.environ["REPOSITORY"],
+              "audit": os.environ["AUDIT_RESULT"],
+              "deny": os.environ["DENY_RESULT"],
+              "sbom_path": "arxiv-search.sbom.json",
+          }
+          with open("evidence/supply-chain.json", "w") as f:
+              json.dump(payload, f, indent=2)
+              f.write("\n")
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: supply-chain-evidence
+          path: evidence/supply-chain.json
+          retention-days: 90

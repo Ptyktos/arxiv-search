@@ -13,7 +13,7 @@ We currently support the latest version of the `arxiv-search-rs-mcp` on the `mas
 
 We take the security of `arxiv-search-rs-mcp` seriously. If you discover a security vulnerability within this project, please responsibly disclose the information.
 
-Please **do not** open a public issue for security vulnerabilities. Instead, please report the vulnerability privately by opening a Draft Security Advisory on GitHub or by contacting the repository maintainers directly.
+Please **do not** open a public issue for security vulnerabilities. Instead, email **security@ptyktos.com**, or report it privately by opening a Draft Security Advisory on GitHub.
 
 When reporting a vulnerability, please include:
 * A detailed description of the vulnerability.
