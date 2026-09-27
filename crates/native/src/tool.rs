@@ -3,8 +3,8 @@ use std::future::Future;
 use rmcp::{
     handler::server::wrapper::Parameters,
     model::{
-        Annotated, CallToolResult, Content, ListResourcesResult, PaginatedRequestParams,
-        RawResource, ReadResourceRequestParams, ReadResourceResult, ResourceContents,
+        CallToolResult, ContentBlock, ListResourcesResult, PaginatedRequestParams,
+        ReadResourceRequestParams, ReadResourceResult, Resource, ResourceContents,
         ServerCapabilities, ServerInfo,
     },
     service::RequestContext,
@@ -665,7 +665,7 @@ impl ArxivServer {
         let out = serde_json::to_string_pretty(&response)
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
-        Ok(CallToolResult::success(vec![Content::text(out)]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(out)]))
     }
 
     #[tool(
@@ -680,7 +680,7 @@ impl ArxivServer {
         let out = self.run_retrieve(input).await?;
         let out = serde_json::to_string_pretty(&out)
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![Content::text(out)]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(out)]))
     }
 
     #[tool(
@@ -695,7 +695,7 @@ impl ArxivServer {
         let out = self.run_hdrr(&input)?;
         let out = serde_json::to_string_pretty(&out)
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![Content::text(out)]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(out)]))
     }
 
     #[tool(description = "Fetch abstract, full text, citations, or recommendations for a paper.")]
@@ -717,7 +717,7 @@ impl ArxivServer {
             }
         }))
         .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![Content::text(out)]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(out)]))
     }
 
     #[tool(
@@ -732,7 +732,7 @@ impl ArxivServer {
         let out_value = self.run_ingest(input).await?;
         let out = serde_json::to_string_pretty(&out_value)
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![Content::text(out)]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(out)]))
     }
 }
 
@@ -758,22 +758,12 @@ impl ServerHandler for ArxivServer {
     ) -> impl Future<Output = Result<ListResourcesResult, McpError>> + Send + '_ {
         std::future::ready(Ok(ListResourcesResult {
             meta: None,
-            resources: vec![Annotated {
-                raw: RawResource {
-                    uri: OPENAPI_URI.to_string(),
-                    name: "arXiv MCP OpenAPI Schema".to_string(),
-                    title: None,
-                    description: Some(
-                        "OpenAPI 3.0 schema for search, retrieve, and legacy execute inputs."
-                            .to_string(),
-                    ),
-                    mime_type: Some("application/yaml".to_string()),
-                    size: u32::try_from(OPENAPI_SPEC.len()).ok(),
-                    icons: None,
-                    meta: None,
-                },
-                annotations: None,
-            }],
+            resources: vec![Resource::new(OPENAPI_URI, "arXiv MCP OpenAPI Schema")
+                .with_description(
+                    "OpenAPI 3.0 schema for search, retrieve, and legacy execute inputs.",
+                )
+                .with_mime_type("application/yaml")
+                .with_size(OPENAPI_SPEC.len() as u64)],
             next_cursor: None,
         }))
     }
