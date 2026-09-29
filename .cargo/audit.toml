@@ -1,0 +1,7 @@
+# cargo-audit config (the RustSec job runs `cargo audit --deny warnings`).
+# Keep in sync with [advisories].ignore in deny.toml.
+[advisories]
+ignore = [
+  # ttf-parser unmaintained, no safe upgrade; transitive via pdf-inspector -> lopdf.
+  "RUSTSEC-2026-0192",
+]

@@ -3,6 +3,8 @@ name = "arxiv-search-rs-mcp"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# Not published: core depends on a git crate, which crates.io rejects.
+publish = false
 description = "arXiv search MCP server"
 
 [[bin]]
