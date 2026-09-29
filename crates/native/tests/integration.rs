@@ -63,7 +63,11 @@ async fn test_full_rag_pipeline() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(chunks.len(), 1);
     assert!(chunks[0].1.contains("methods"));
 
+    drop(db);
     std::fs::remove_file(test_db)?;
+    // WAL mode leaves sidecar files next to the database.
+    let _ = std::fs::remove_file("test_full_rag.db-wal");
+    let _ = std::fs::remove_file("test_full_rag.db-shm");
     Ok(())
 }
 
@@ -80,6 +84,7 @@ async fn test_run_retrieve_stores_real_metadata() -> Result<(), Box<dyn std::err
         chunk_chars: 4000,
         chunk_overlap: 200,
         segmentation_k: None,
+        full_payload: false,
     };
 
     let result = server.run_retrieve(input).await?;
@@ -115,6 +120,7 @@ async fn test_segmentation_k_produces_hierarchical_chunks() -> Result<(), Box<dy
         chunk_chars: 4000,
         chunk_overlap: 200,
         segmentation_k: Some(1.2),
+        full_payload: true,
     };
 
     let result = server.run_retrieve(input).await?;

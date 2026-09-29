@@ -30,6 +30,9 @@ impl Database {
 
         let conn = Connection::open(path)
             .with_context(|| format!("Failed to open database at {}", path.display()))?;
+        // WAL + NORMAL sync: one fsync per transaction instead of per row.
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
+            .context("Failed to configure database")?;
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS papers (
@@ -109,6 +112,65 @@ impl Database {
             params![id, paper_id, text, emb_blob, cluster_id],
         )
         .context("Failed to insert chunk")?;
+        drop(conn);
+        Ok(())
+    }
+
+    /// Number of chunks stored for a paper (0 if it was never ingested).
+    ///
+    /// # Errors
+    /// Returns an error if the database query fails.
+    pub fn chunk_count(&self, paper_id: &str) -> Result<usize> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow!("Failed to lock database"))?;
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM chunks WHERE paper_id = ?1",
+                [paper_id],
+                |row| row.get(0),
+            )
+            .context("Failed to count chunks")?;
+        drop(conn);
+        Ok(usize::try_from(n).unwrap_or(0))
+    }
+
+    /// Stores a paper and replaces all of its chunks in a single transaction.
+    ///
+    /// # Errors
+    /// Returns an error if any database operation fails; nothing is committed then.
+    pub fn ingest_paper(
+        &self,
+        id: &str,
+        title: &str,
+        abstract_text: &str,
+        chunks: &[(String, &str, Vec<f32>, Option<&str>)],
+    ) -> Result<()> {
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|_| anyhow!("Failed to lock database"))?;
+        let tx = conn.transaction().context("Failed to begin transaction")?;
+        tx.execute(
+            "INSERT OR REPLACE INTO papers (id, title, abstract) VALUES (?1, ?2, ?3)",
+            params![id, title, abstract_text],
+        )
+        .context("Failed to insert paper")?;
+        tx.execute("DELETE FROM chunks WHERE paper_id = ?1", [id])
+            .context("Failed to clear stale chunks")?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO chunks (id, paper_id, text, embedding_blob, cluster_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+            )?;
+            for (chunk_id, text, embedding, cluster_id) in chunks {
+                let blob: Vec<u8> = embedding.iter().flat_map(|v| v.to_le_bytes()).collect();
+                stmt.execute(params![chunk_id, id, text, blob, cluster_id])
+                    .context("Failed to insert chunk")?;
+            }
+        }
+        tx.commit().context("Failed to commit ingest")?;
         drop(conn);
         Ok(())
     }

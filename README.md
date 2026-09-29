@@ -13,8 +13,27 @@ The main retrieval flow is designed for LLM ingestion: retrieve paper content di
 - **Advanced RAG Engine:** Implements hierarchical text segmentation (arXiv:2507.09935) and Hybrid Document-Routed Retrieval (HDRR, arXiv:2603.26815) for high-precision retrieval.
 - **Embedded Database:** Optional `rusqlite` backend for document and chunk indexing, enabling stage-routed searches and cross-document synthesis.
 - **Cache TTL:** Automatic pruning of stale cache files to manage disk usage.
-- **Native OS Caching:** Employs an asynchronous persistence layer (`~/.arxiv_cache`) to cache fetched HTML/PDFs and bypass HTTP overhead entirely.
+- **Native OS Caching:** Caches fetched HTML/PDFs and metadata in the OS cache directory (`~/.cache/mcp/` on Linux, `~/Library/Caches/org.arxiv-search.mcp/` on macOS) and keeps prepared responses in memory, so repeat requests skip HTTP and re-processing entirely.
 
+
+## Benchmarks
+
+Measured against [`arxiv-mcp-server`](https://github.com/blazickjp/arxiv-mcp-server) 0.7.2 on the same 8 papers, end to end over MCP stdio.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/arxiv/charts/summary-dark.svg">
+  <img alt="arxiv-search vs arxiv-mcp-server: times better per metric" src="benchmarks/arxiv/charts/summary-light.svg">
+</picture>
+
+| | arxiv-search | arxiv-mcp-server 0.7.2 |
+|---|---:|---:|
+| First request, paper ID to full text (7 papers, total) | **4.1 s** | 12.2 s |
+| Repeat request (7 papers, total) | **14 ms** | 46 ms |
+| Tokens in context (7 papers, total) | **183,625** | 214,798 |
+| Peak memory | **23–25 MiB** | 81–432 MiB |
+| Startup | **88 ms** | 664 ms |
+
+Charts, per-paper numbers, methodology, and a one-command reproduction are in [`benchmarks/`](benchmarks/README.md).
 
 ## Tools
 
@@ -49,15 +68,14 @@ Retrieve a paper directly from arXiv content URLs, prune it, and chunk it for mo
 | `chunk_chars` | integer | `4000` | Target chunk size |
 | `chunk_overlap` | integer | `200` | Overlap between chunks |
 | `segmentation_k` | float | - | Optional. If set, uses hierarchical segmentation with the given sensitivity parameter. |
+| `full_payload` | bool | `false` | Return the legacy payload (raw markdown, per-chunk text, embeddings) instead of the compact view |
 
+The response is compact JSON, with the paper text appearing exactly once:
 
-The response is structured JSON with:
-
-- paper id and content URL
-- source used for retrieval
-- raw markdown
-- pruned markdown
-- chunk list
+- `paper`: metadata (title, authors, abstract, …)
+- `source`: `html` or `pdf`. The PDF is used when there's no HTML rendering, or when arXiv's HTML render is degraded.
+- `pruned_markdown`: cleaned paper text. The reference list is dropped, appendices are kept, and math appears once as `$TeX$`.
+- `chunks`: `[start_char, end_char)` offsets into `pruned_markdown`, plus any hierarchy `context`
 
 ### `hdrr`
 Hybrid Document-Routed Retrieval. Two-stage retrieval that first routes to relevant documents and then performs scoped chunk searches.
@@ -125,7 +143,7 @@ Steps:
 
 When invoked natively the tool exposes four MCP tools — `search`, `retrieve_paper`,
 `hdrr`, `execute`. Query syntax is arXiv Lucene (`ti:`, `au:`, `abs:`, boolean
-`AND`/`OR`/`NOT`, quoted phrases). Cache lives at `~/.arxiv_cache`.
+`AND`/`OR`/`NOT`, quoted phrases). Cache lives at `~/.cache/mcp/` (Linux).
 ```
 
 ## Cloudflare Worker

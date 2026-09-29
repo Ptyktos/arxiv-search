@@ -4,18 +4,35 @@ all-features = false
 [advisories]
 version = 2
 yanked = "deny"
-ignore = []
+ignore = [
+  # ttf-parser is unmaintained with no safe upgrade; it reaches us only via
+  # pdf-inspector -> lopdf for PDF text extraction. Revisit if pdf-inspector
+  # moves to skrifa or another maintained font parser.
+  { id = "RUSTSEC-2026-0192", reason = "transitive via pdf-inspector/lopdf; no upgrade available" },
+]
 
 [licenses]
 version = 2
 allow = [
   "Apache-2.0",
   "BSD-3-Clause",
+  "ISC",
   "MIT",
   "Unicode-3.0",
   "Zlib",
 ]
 confidence-threshold = 0.8
+
+# Narrow, per-crate exceptions rather than allowing these licenses globally.
+[[licenses.exceptions]]
+# Mozilla's CA root list, bundled by rustls via reqwest.
+crate = "webpki-roots"
+allow = ["CDLA-Permissive-2.0"]
+
+[[licenses.exceptions]]
+# File-level weak copyleft; pulled in by directories -> dirs-sys.
+crate = "option-ext"
+allow = ["MPL-2.0"]
 
 [bans]
 multiple-versions = "warn"
@@ -27,4 +44,8 @@ highlight = "all"
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = ["https://github.com/firecrawl/pdf-inspector"]
+allow-git = [
+  "https://github.com/firecrawl/pdf-inspector",
+  # pdf-inspector pins lopdf to a git revision.
+  "https://github.com/J-F-Liu/lopdf",
+]

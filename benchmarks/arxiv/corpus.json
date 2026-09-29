@@ -1,0 +1,23 @@
+{
+  "tokenizer": "o200k_base",
+  "incumbent": {
+    "requirement": "arxiv-mcp-server[pdf]==0.7.2",
+    "python": "3.11",
+    "repo": "https://github.com/blazickjp/arxiv-mcp-server"
+  },
+  "papers": [
+    {"id": "1706.03762v7", "note": "Attention Is All You Need; mid-size HTML"},
+    {"id": "1810.04805v2", "note": "BERT"},
+    {"id": "2106.09685v2", "note": "LoRA; math-heavy HTML"},
+    {"id": "2310.06825v1", "note": "Mistral 7B; small HTML"},
+    {"id": "2005.14165v4", "note": "GPT-3; very large HTML (~1.2 MB)"},
+    {"id": "2307.09288v2", "note": "Llama 2; large HTML (~1 MB), many tables"},
+    {"id": "1412.6980v9", "note": "Adam; arXiv serves a degraded ~20 KB 'Untitled Document' HTML page (quality trap)"},
+    {"id": "0801.1234v2", "note": "No HTML rendering (404); exercises the PDF fallback", "pdf_only": true}
+  ],
+  "queries": [
+    {"q": "ti:attention AND au:vaswani", "n": 10},
+    {"q": "abs:\"low-rank adaptation\" AND cat:cs.CL", "n": 10},
+    {"q": "retrieval augmented generation", "n": 25}
+  ]
+}

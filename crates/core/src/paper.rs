@@ -7,6 +7,7 @@ pub struct Author {
     /// The full name of the author.
     pub name: String,
     /// A list of associated institutional affiliations, if any.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub affiliations: Vec<String>,
 }
 
@@ -25,13 +26,17 @@ pub struct Paper {
     /// The abstract text.
     pub abstract_text: String,
     /// `ArXiv` subject categories (e.g., `cs.AI`, `cs.LG`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub categories: Vec<String>,
     /// The publication timestamp (e.g., `2021-03-23T00:00:00Z`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub published: String,
     /// The canonical URL to the paper on arxiv.org.
     pub url: String,
     /// Digital Object Identifier, if provided.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doi: Option<String>,
     /// Journal reference string, if published outside arXiv.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub journal_ref: Option<String>,
 }

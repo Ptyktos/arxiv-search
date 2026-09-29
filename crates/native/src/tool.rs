@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::future::Future;
+use std::sync::{Arc, Mutex};
 
 use rmcp::{
     handler::server::wrapper::Parameters,
@@ -17,7 +19,7 @@ use serde_json::Value;
 use arxiv_search_rs_mcp_core::{
     arxiv::{build_query_params, normalize_paper_id, parse_response},
     content::{prepare_paper, PreparationOptions, PreparedPaper},
-    html::to_markdown,
+    html::{extract_metadata, to_markdown, HtmlMetadata},
     pdf::extract_text,
     semantic_scholar::{parse_citations, parse_recommendations},
     Paper,
@@ -250,6 +252,10 @@ pub struct RetrieveInput {
     #[serde(default = "default_chunk_overlap")]
     pub chunk_overlap: usize,
     pub segmentation_k: Option<f32>,
+    /// Return the legacy full payload (raw markdown, per-chunk text, embeddings)
+    /// instead of the compact view that contains the paper text once.
+    #[serde(default)]
+    pub full_payload: bool,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -301,13 +307,34 @@ const fn default_chunk_overlap() -> usize {
 #[derive(Debug, Clone)]
 pub struct ArxivServer {
     client: FetchClient,
+    /// Serialized `retrieve_paper` responses keyed by normalized input, so a
+    /// repeat request skips re-conversion and re-indexing entirely.
+    responses: Arc<Mutex<HashMap<String, Arc<str>>>>,
+}
+
+/// Upper bound on cached `retrieve_paper` responses held in memory.
+const RESPONSE_CACHE_ENTRIES: usize = 64;
+
+/// HTML that converts to fewer characters than this is treated as a failed
+/// `LaTeXML` render (arXiv serves "Untitled Document" stubs for some papers),
+/// and the PDF is used instead.
+const MIN_HTML_TEXT_CHARS: usize = 2_000;
+
+/// Full text of a paper plus the metadata printed on its HTML page, if any.
+struct FullText {
+    source: &'static str,
+    markdown: String,
+    html_meta: Option<HtmlMetadata>,
 }
 
 impl ArxivServer {
     /// Constructs a new `ArxivServer` with the provided HTTP client.
     #[must_use]
-    pub const fn new(client: FetchClient) -> Self {
-        Self { client }
+    pub fn new(client: FetchClient) -> Self {
+        Self {
+            client,
+            responses: Arc::default(),
+        }
     }
 }
 
@@ -329,17 +356,49 @@ fn format_hierarchical_chunks(prepared: &mut PreparedPaper) {
 }
 
 impl ArxivServer {
-    /// Fetch paper metadata from arXiv API, fall back to a placeholder.
-    async fn fetch_paper_metadata(&self, id: &str) -> Paper {
-        self.client.fetch_arxiv_by_id(id).await.map_or_else(
-            |_| Self::fallback_paper(id),
-            |xml| {
-                parse_response(&xml)
-                    .ok()
-                    .and_then(|r| r.papers.into_iter().next())
-                    .unwrap_or_else(|| Self::fallback_paper(id))
-            },
-        )
+    /// Fetch paper metadata from the arXiv API (disk-cached by the client).
+    async fn fetch_api_metadata(&self, id: &str) -> Option<Paper> {
+        let xml = self.client.fetch_arxiv_by_id(id).await.ok()?;
+        parse_response(&xml).ok()?.papers.into_iter().next()
+    }
+
+    fn paper_from_html(id: &str, meta: &HtmlMetadata) -> Paper {
+        Paper {
+            title: meta.title.clone(),
+            authors: meta
+                .authors
+                .iter()
+                .map(|name| arxiv_search_rs_mcp_core::paper::Author {
+                    name: name.clone(),
+                    affiliations: Vec::new(),
+                })
+                .collect(),
+            abstract_text: meta.abstract_text.clone(),
+            ..Self::fallback_paper(id)
+        }
+    }
+
+    /// Fetch full text and metadata concurrently.
+    ///
+    /// The arXiv API lookup runs in the background while the full text is
+    /// fetched. If it has not finished by the time the text is ready, the
+    /// metadata printed on the HTML page is used instead of waiting, and the
+    /// lookup keeps running to warm the metadata cache for next time.
+    async fn fetch_paper(&self, id: &str) -> Result<(Paper, FullText), McpError> {
+        let this = self.clone();
+        let owned = id.to_string();
+        let api = tokio::spawn(async move { this.fetch_api_metadata(&owned).await });
+        let full = self.fetch_full_text(id).await?;
+        let paper = match (&full.html_meta, api.is_finished()) {
+            (Some(meta), false) => Self::paper_from_html(id, meta),
+            (html_meta, _) => api.await.ok().flatten().unwrap_or_else(|| {
+                html_meta.as_ref().map_or_else(
+                    || Self::fallback_paper(id),
+                    |meta| Self::paper_from_html(id, meta),
+                )
+            }),
+        };
+        Ok((paper, full))
     }
 
     fn fallback_paper(id: &str) -> Paper {
@@ -356,31 +415,79 @@ impl ArxivServer {
         }
     }
 
-    /// Try HTML first, fall back to PDF, return a helpful error if both fail.
-    async fn fetch_full_text(&self, id: &str) -> Result<(&'static str, String), McpError> {
-        if let Some(html) = self
+    /// Try HTML first; fall back to PDF when there is no HTML or it is a
+    /// degraded render. Returns a helpful error if neither yields text.
+    async fn fetch_full_text(&self, id: &str) -> Result<FullText, McpError> {
+        let html = self
             .client
             .fetch_html(id)
             .await
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?
-        {
-            let md =
-                to_markdown(&html).map_err(|e| McpError::internal_error(e.to_string(), None))?;
-            return Ok(("html", md));
-        }
-        match self.client.fetch_pdf(id).await {
-            Ok(bytes) => {
-                let text = extract_text(&bytes)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        let degraded = match html {
+            Some(html) => {
+                let markdown = to_markdown(&html)
                     .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-                Ok(("pdf", text))
+                let full = FullText {
+                    source: "html",
+                    html_meta: extract_metadata(&html),
+                    markdown,
+                };
+                if full.markdown.chars().count() >= MIN_HTML_TEXT_CHARS {
+                    return Ok(full);
+                }
+                tracing::warn!(id, "HTML render is nearly empty; trying PDF");
+                Some(full)
             }
-            Err(e) => Err(McpError::internal_error(
+            None => None,
+        };
+        let pdf = match self.client.fetch_pdf(id).await {
+            Ok(bytes) => extract_text(&bytes).map_err(|e| e.to_string()),
+            Err(e) => Err(e.to_string()),
+        };
+        match (pdf, degraded) {
+            (Ok(markdown), degraded) => Ok(FullText {
+                source: "pdf",
+                markdown,
+                html_meta: degraded.and_then(|d| d.html_meta),
+            }),
+            (Err(_), Some(degraded)) => Ok(degraded),
+            (Err(e), None) => Err(McpError::internal_error(
                 format!(
                     "No full text available for {id}: HTML not found and PDF fetch failed ({e}). \
                          Use the 'abstract' op via the execute tool to get metadata only."
                 ),
                 None,
             )),
+        }
+    }
+
+    /// Store a prepared paper and its chunk embeddings for HDRR, in one
+    /// transaction. Skipped when the same chunking is already stored.
+    #[cfg(feature = "embedded-db")]
+    fn ingest(&self, prepared: &PreparedPaper) {
+        let Some(db) = &self.client.db else {
+            return;
+        };
+        let paper = &prepared.paper;
+        if db.chunk_count(&paper.id).ok() == Some(prepared.chunks.len()) {
+            return;
+        }
+        let corpus: Vec<&str> = prepared.chunks.iter().map(|c| c.text.as_str()).collect();
+        let vectorizer = arxiv_search_rs_mcp_core::tfidf::TfidfVectorizer::new(&corpus);
+        let rows: Vec<_> = prepared
+            .chunks
+            .iter()
+            .map(|c| {
+                (
+                    format!("{}-{}", paper.id, c.index),
+                    c.text.as_str(),
+                    vectorizer.vectorize(&c.text),
+                    c.cluster_id.as_deref(),
+                )
+            })
+            .collect();
+        if let Err(e) = db.ingest_paper(&paper.id, &paper.title, &paper.abstract_text, &rows) {
+            tracing::error!(?e, "failed to ingest {}", paper.id);
         }
     }
 
@@ -405,8 +512,8 @@ impl ArxivServer {
                     .map_err(|e| McpError::internal_error(e.to_string(), None))
             }
             "download" => {
-                let (_, text) = self.fetch_full_text(&id).await?;
-                Ok(Value::String(text))
+                let full = self.fetch_full_text(&id).await?;
+                Ok(Value::String(full.markdown))
             }
             "citations" => {
                 let limit = op.limit.unwrap_or(10).clamp(1, 100);
@@ -433,14 +540,12 @@ impl ArxivServer {
                     .map_err(|e| McpError::internal_error(e.to_string(), None))
             }
             "retrieve" => {
-                let (source, text) = self.fetch_full_text(&id).await?;
+                let (paper, full) = self.fetch_paper(&id).await?;
 
-                let paper = self.fetch_paper_metadata(&id).await;
-
-                let mut prepared = prepare_paper(
+                let prepared = prepare_paper(
                     paper,
-                    source,
-                    text,
+                    full.source,
+                    full.markdown,
                     PreparationOptions {
                         prune_references: op.prune_references,
                         chunk_chars: op.chunk_chars,
@@ -448,10 +553,7 @@ impl ArxivServer {
                         segmentation_k: op.segmentation_k,
                     },
                 );
-                format_hierarchical_chunks(&mut prepared);
-
-                serde_json::to_value(prepared)
-                    .map_err(|e| McpError::internal_error(e.to_string(), None))
+                Ok(prepared.agent_view())
             }
             unknown => Err(McpError::invalid_params(
                 format!("unknown op \"{unknown}\"; valid: abstract, download, citations, recs, retrieve"),
@@ -470,15 +572,12 @@ impl ArxivServer {
         let id = normalize_paper_id(&input.paper_id)
             .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
 
-        // Fetch metadata first so the DB stores real title/abstract for HDRR routing
-        let paper = self.fetch_paper_metadata(&id).await;
-
-        let (source, text) = self.fetch_full_text(&id).await?;
+        let (paper, full) = self.fetch_paper(&id).await?;
 
         let mut prepared = prepare_paper(
-            paper.clone(),
-            source,
-            text,
+            paper,
+            full.source,
+            full.markdown,
             PreparationOptions {
                 prune_references: input.prune_references,
                 chunk_chars: input.chunk_chars,
@@ -488,27 +587,46 @@ impl ArxivServer {
         );
 
         #[cfg(feature = "embedded-db")]
-        if let Some(db) = &self.client.db {
-            let _ = db.store_paper(&paper.id, &paper.title, &paper.abstract_text);
-            let corpus: Vec<String> = prepared.chunks.iter().map(|c| c.text.clone()).collect();
-            let corpus_refs: Vec<&str> = corpus.iter().map(String::as_str).collect();
-            let vectorizer = arxiv_search_rs_mcp_core::tfidf::TfidfVectorizer::new(&corpus_refs);
-            for chunk in &prepared.chunks {
-                let id = format!("{}-{}", paper.id, chunk.index);
-                let emb = vectorizer.vectorize(&chunk.text);
-                let _ = db.store_chunk(
-                    &id,
-                    &paper.id,
-                    &chunk.text,
-                    Some(&emb),
-                    chunk.cluster_id.as_deref(),
-                );
-            }
+        self.ingest(&prepared);
+
+        if !input.full_payload {
+            return Ok(prepared.agent_view());
         }
-
         format_hierarchical_chunks(&mut prepared);
-
         serde_json::to_value(prepared).map_err(|e| McpError::internal_error(e.to_string(), None))
+    }
+
+    /// `run_retrieve`, serialized and memoized per normalized input.
+    async fn retrieve_cached(&self, input: RetrieveInput) -> Result<Arc<str>, McpError> {
+        let id = normalize_paper_id(&input.paper_id)
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let key = format!(
+            "{id}|{}|{}|{}|{:?}|{}",
+            input.prune_references,
+            input.chunk_chars,
+            input.chunk_overlap,
+            input.segmentation_k,
+            input.full_payload
+        );
+        if let Some(hit) = self
+            .responses
+            .lock()
+            .ok()
+            .and_then(|m| m.get(&key).cloned())
+        {
+            return Ok(hit);
+        }
+        let value = self.run_retrieve(input).await?;
+        let out: Arc<str> = serde_json::to_string(&value)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?
+            .into();
+        if let Ok(mut cache) = self.responses.lock() {
+            if cache.len() >= RESPONSE_CACHE_ENTRIES {
+                cache.clear();
+            }
+            cache.insert(key, Arc::clone(&out));
+        }
+        Ok(out)
     }
 
     fn run_hdrr(&self, input: &HdrrInput) -> Result<Value, McpError> {
@@ -572,8 +690,7 @@ impl ArxivServer {
                 }
             };
 
-            let paper = self.fetch_paper_metadata(&id).await;
-            let (source, text) = match self.fetch_full_text(&id).await {
+            let (paper, full) = match self.fetch_paper(&id).await {
                 Ok(result) => result,
                 Err(e) => {
                     errors.push(serde_json::json!({"id": id, "error": e.to_string()}));
@@ -582,9 +699,9 @@ impl ArxivServer {
             };
 
             let prepared = prepare_paper(
-                paper.clone(),
-                source,
-                text,
+                paper,
+                full.source,
+                full.markdown,
                 PreparationOptions {
                     prune_references: input.prune_references,
                     chunk_chars: input.chunk_chars,
@@ -594,24 +711,7 @@ impl ArxivServer {
             );
 
             #[cfg(feature = "embedded-db")]
-            if let Some(db) = &self.client.db {
-                let _ = db.store_paper(&paper.id, &paper.title, &paper.abstract_text);
-                let corpus: Vec<String> = prepared.chunks.iter().map(|c| c.text.clone()).collect();
-                let corpus_refs: Vec<&str> = corpus.iter().map(String::as_str).collect();
-                let vectorizer =
-                    arxiv_search_rs_mcp_core::tfidf::TfidfVectorizer::new(&corpus_refs);
-                for chunk in &prepared.chunks {
-                    let chunk_id = format!("{}-{}", paper.id, chunk.index);
-                    let emb = vectorizer.vectorize(&chunk.text);
-                    let _ = db.store_chunk(
-                        &chunk_id,
-                        &paper.id,
-                        &chunk.text,
-                        Some(&emb),
-                        chunk.cluster_id.as_deref(),
-                    );
-                }
-            }
+            self.ingest(&prepared);
 
             ingested += 1;
         }
@@ -662,7 +762,7 @@ impl ArxivServer {
 
         tracing::info!("arXiv search: parsed {} papers", response.papers.len());
 
-        let out = serde_json::to_string_pretty(&response)
+        let out = serde_json::to_string(&response)
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
 
         Ok(CallToolResult::success(vec![ContentBlock::text(out)]))
@@ -677,10 +777,10 @@ impl ArxivServer {
     ) -> Result<CallToolResult, McpError> {
         let span = tracing::info_span!("mcp_tool_retrieve_paper");
         let _enter = span.enter();
-        let out = self.run_retrieve(input).await?;
-        let out = serde_json::to_string_pretty(&out)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        Ok(CallToolResult::success(vec![ContentBlock::text(out)]))
+        let out = self.retrieve_cached(input).await?;
+        Ok(CallToolResult::success(vec![ContentBlock::text(
+            out.to_string(),
+        )]))
     }
 
     #[tool(
@@ -693,7 +793,7 @@ impl ArxivServer {
         let span = tracing::info_span!("mcp_tool_hdrr");
         let _enter = span.enter();
         let out = self.run_hdrr(&input)?;
-        let out = serde_json::to_string_pretty(&out)
+        let out = serde_json::to_string(&out)
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![ContentBlock::text(out)]))
     }
@@ -708,7 +808,7 @@ impl ArxivServer {
         let id = op.id.clone();
         let op_name = op.op.clone();
         let result = self.run_operation(op).await;
-        let out = serde_json::to_string_pretty(&serde_json::json!({
+        let out = serde_json::to_string(&serde_json::json!({
             "id": id,
             "op": op_name,
             "result": match result {
@@ -730,7 +830,7 @@ impl ArxivServer {
         let span = tracing::info_span!("mcp_tool_ingest_corpus");
         let _enter = span.enter();
         let out_value = self.run_ingest(input).await?;
-        let out = serde_json::to_string_pretty(&out_value)
+        let out = serde_json::to_string(&out_value)
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         Ok(CallToolResult::success(vec![ContentBlock::text(out)]))
     }

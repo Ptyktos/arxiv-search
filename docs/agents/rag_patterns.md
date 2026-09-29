@@ -3,7 +3,7 @@
 ## 1. Token Efficiency
 - The server automatically prunes references and boilerplate.
 - Use `hdrr` with `limit_docs` (Stage 1) and `limit_chunks` (Stage 2) to prevent context window overflow.
-- Chunks carry **Hierarchical Metadata**. Pay attention to the `Context:` prefix; it represents the structural parent (e.g., Section Header) of the chunk.
+- `retrieve_paper` returns the paper text once (`pruned_markdown`); `chunks` are `[start_char, end_char)` offsets into it. A chunk's `context` field names its structural parent (e.g., section header) when known. Pass `full_payload: true` only if you need raw markdown, per-chunk text, or embeddings.
 
 ## 2. Advanced RAG Patterns
 - **Multi-Paper Synthesis**: If answering across multiple papers, use `hdrr`. The stage-routed search ensures that the retrieval space is confined only to relevant documents identified in Stage 1.
