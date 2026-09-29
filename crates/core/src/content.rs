@@ -231,18 +231,25 @@ pub fn normalize_markdown(text: &str) -> String {
 #[must_use]
 pub fn prune_markdown(text: &str, prune_references: bool) -> String {
     let mut lines = Vec::new();
-    let mut skipping_references = false;
+    // Heading level of the reference section being skipped (0 = unmarked line).
+    // Skipping ends at the next heading of the same or higher level, so
+    // appendices that follow the bibliography are kept.
+    let mut skipping_level: Option<usize> = None;
 
     for line in text.lines() {
         let trimmed = line.trim();
 
         if prune_references && is_reference_heading(trimmed) {
-            skipping_references = true;
+            skipping_level = Some(heading_level(trimmed));
             continue;
         }
 
-        if skipping_references {
-            continue;
+        if let Some(level) = skipping_level {
+            let this = heading_level(trimmed);
+            if this == 0 || (level > 0 && this > level) {
+                continue;
+            }
+            skipping_level = None;
         }
 
         if is_noise_line(trimmed) {
@@ -339,6 +346,16 @@ fn collapse_blank_lines(text: &str) -> String {
     out.trim().to_string()
 }
 
+/// Markdown ATX heading level (`## x` -> 2), or 0 if the line is not a heading.
+fn heading_level(line: &str) -> usize {
+    let level = line.bytes().take_while(|&b| b == b'#').count();
+    if (1..=6).contains(&level) && line[level..].starts_with([' ', '\t']) {
+        level
+    } else {
+        0
+    }
+}
+
 fn is_reference_heading(line: &str) -> bool {
     let stripped = line
         .trim()
@@ -400,6 +417,28 @@ mod tests {
     fn prunes_references_and_notes() {
         let input = "Body text\n\n# References and Notes\n[1] foo";
         assert_eq!(prune_markdown(input, true), "Body text");
+    }
+
+    #[test]
+    fn keeps_appendix_after_references() {
+        let input =
+            "Intro\n\n## References\n[1] one\n### Sub-list\n[2] two\n\n## Appendix A\nDetails.";
+        assert_eq!(
+            prune_markdown(input, true),
+            "Intro\n\n## Appendix A\nDetails."
+        );
+    }
+
+    #[test]
+    fn keeps_higher_level_heading_after_unmarked_references() {
+        let input = "Intro\n\nReferences\n[1] one\n\n# Appendix\nMore.";
+        assert_eq!(prune_markdown(input, true), "Intro\n\n# Appendix\nMore.");
+    }
+
+    #[test]
+    fn hashtag_text_does_not_end_reference_skip() {
+        let input = "Intro\n\n## References\n#1 one\n[2] two";
+        assert_eq!(prune_markdown(input, true), "Intro");
     }
 
     #[test]
