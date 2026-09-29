@@ -4,3 +4,4 @@
 *.swo
 .DS_Store
 benchmarks/.cache/
+__pycache__/
