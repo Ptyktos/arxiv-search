@@ -5,3 +5,4 @@
 .DS_Store
 benchmarks/.cache/
 __pycache__/
+benchmarks/charts/target/

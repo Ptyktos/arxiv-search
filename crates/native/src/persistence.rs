@@ -20,7 +20,7 @@ pub struct ArxivCache {
 impl ArxivCache {
     /// Initializes a new cache instance.
     ///
-    /// Determines the standard cache directory for the OS (e.g. `~/.cache/arxiv-search-mcp` on Linux)
+    /// Determines the standard cache directory for the OS (e.g. `~/.cache/mcp` on Linux)
     /// and ensures that it exists.
     ///
     /// # Errors

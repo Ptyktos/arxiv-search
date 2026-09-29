@@ -73,6 +73,58 @@ pub struct PreparedPaper {
     pub hierarchical_chunks: Option<Vec<HierarchicalPaperChunk>>,
 }
 
+impl PreparedPaper {
+    /// Compact, agent-facing JSON: the pruned paper text appears exactly once.
+    ///
+    /// Chunks are returned as `[start_char, end_char)` offsets into
+    /// `pruned_markdown` (plus any hierarchy context) instead of repeating their
+    /// text; `raw_markdown` and embedding vectors are omitted. Callers that need
+    /// the old shape can serialize `PreparedPaper` directly.
+    #[must_use]
+    pub fn agent_view(&self) -> serde_json::Value {
+        let chunks: Vec<serde_json::Value> = self
+            .chunks
+            .iter()
+            .map(|c| {
+                let mut v = serde_json::json!({
+                    "index": c.index,
+                    "start_char": c.start_char,
+                    "end_char": c.end_char,
+                });
+                let context: Vec<&str> = [c.parent_id.as_deref(), c.cluster_id.as_deref()]
+                    .into_iter()
+                    .flatten()
+                    .collect();
+                if !context.is_empty() {
+                    v["context"] = context.join(" -> ").into();
+                }
+                v
+            })
+            .collect();
+        let mut out = serde_json::json!({
+            "paper": self.paper,
+            "source": self.source,
+            "pruned_markdown": self.pruned_markdown,
+            "chunks": chunks,
+        });
+        if let Some(hier) = &self.hierarchical_chunks {
+            out["hierarchical_chunks"] = hier
+                .iter()
+                .map(|h| {
+                    serde_json::json!({
+                        "index": h.index,
+                        "cluster_id": h.cluster_id,
+                        "parent_id": h.parent_id,
+                        "segments": h.segments.len(),
+                        "text": h.text,
+                    })
+                })
+                .collect();
+        }
+        out
+    }
+}
+
 #[must_use]
 pub fn prepare_paper(
     paper: Paper,
@@ -275,8 +327,12 @@ pub fn chunk_text(text: &str, chunk_chars: usize, chunk_overlap: usize) -> Vec<P
     while start < n {
         let end = (start + chunk_chars).min(n);
 
-        let break_point = find_break_point(&chars, start, end);
-        let actual_end = break_point.unwrap_or(end);
+        // The final window runs to the end of the text: take it whole.
+        let actual_end = if end == n {
+            n
+        } else {
+            find_break_point(&chars, start, end).unwrap_or(end)
+        };
 
         let chunk_text: String = chars[start..actual_end].iter().collect();
         if !chunk_text.trim().is_empty() {
@@ -290,6 +346,11 @@ pub fn chunk_text(text: &str, chunk_chars: usize, chunk_overlap: usize) -> Vec<P
             });
         }
 
+        // Stop once the text is covered. Rewinding by the overlap here would
+        // re-emit the tail as ~overlap near-duplicate chunks, one char apart.
+        if actual_end == n {
+            break;
+        }
         if actual_end == start {
             start += 1;
         } else {
@@ -453,6 +514,69 @@ mod tests {
         let chunks = chunk_text(input, 12, 0);
         assert!(chunks.len() >= 2);
         assert_eq!(chunks[0].index, 0);
+    }
+
+    #[test]
+    fn agent_view_contains_text_once_and_offsets_index_it() {
+        let para = "word ".repeat(150) + ".\n\n";
+        let prepared = prepare_paper(
+            Paper {
+                id: "1".into(),
+                title: "T".into(),
+                authors: vec![],
+                abstract_text: String::new(),
+                categories: vec![],
+                published: String::new(),
+                url: String::new(),
+                doi: None,
+                journal_ref: None,
+            },
+            "html",
+            para.repeat(20),
+            PreparationOptions::default(),
+        );
+        let view = prepared.agent_view();
+        let json = view.to_string();
+        assert!(!json.contains("raw_markdown"));
+        // Text once plus small per-chunk offsets, not text x3.
+        assert!(
+            json.len() < prepared.pruned_markdown.len() * 11 / 10,
+            "{} vs {}",
+            json.len(),
+            prepared.pruned_markdown.len()
+        );
+        let text: Vec<char> = view["pruned_markdown"]
+            .as_str()
+            .unwrap_or_default()
+            .chars()
+            .collect();
+        for (c, v) in prepared
+            .chunks
+            .iter()
+            .zip(view["chunks"].as_array().into_iter().flatten())
+        {
+            let (s, e) = (
+                v["start_char"].as_u64().unwrap_or(0),
+                v["end_char"].as_u64().unwrap_or(0),
+            );
+            let slice: String = text
+                [usize::try_from(s).unwrap_or(0)..usize::try_from(e).unwrap_or(0)]
+                .iter()
+                .collect();
+            assert_eq!(slice, c.text);
+        }
+    }
+
+    #[test]
+    fn chunk_count_is_linear_in_text_length() {
+        let para = "word ".repeat(150) + ".\n\n";
+        let text = para.repeat(40); // ~30k chars
+        let chunks = chunk_text(&text, 4_000, 200);
+        assert!(chunks.len() <= 12, "got {} chunks", chunks.len());
+        assert_eq!(
+            chunks.last().map(|c| c.end_char),
+            Some(text.chars().count())
+        );
     }
 
     #[test]

@@ -284,7 +284,7 @@ async fn handle_retrieve_paper(args: &serde_json::Value) -> std::result::Result<
             segmentation_k: None,
         },
     );
-    serde_json::to_string_pretty(&prepared).map_err(|e| e.to_string())
+    serde_json::to_string(&prepared.agent_view()).map_err(|e| e.to_string())
 }
 
 async fn dispatch(rpc: RpcRequest) -> RpcResponse {

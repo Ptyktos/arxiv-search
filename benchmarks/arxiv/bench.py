@@ -199,7 +199,9 @@ class IncumbentArm(McpArm):
         return {"paper_id": paper_id, "return_full_text": True}
 
     def search_args(self, q, n):
-        return {"query": q, "max_results": n}
+        # Default is ~280-char abstract snippets; request full abstracts so both
+        # servers return the same content and response tokens are comparable.
+        return {"query": q, "max_results": n, "abstract_mode": "full"}
 
     def content(self, response):
         try:

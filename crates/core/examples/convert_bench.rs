@@ -16,7 +16,7 @@ use std::time::Instant;
 use arxiv_search_rs_mcp_core::content::{prepare_paper, PreparationOptions};
 use arxiv_search_rs_mcp_core::{html, pdf, Paper};
 
-fn placeholder_paper() -> Paper {
+const fn placeholder_paper() -> Paper {
     Paper {
         id: String::new(),
         title: String::new(),
