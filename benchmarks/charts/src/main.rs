@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::path::{Path, PathBuf};
 
+use charton::core::guide::LegendPosition;
 use charton::prelude::*;
 use serde_json::Value;
 
@@ -138,8 +139,15 @@ impl Bars<'_> {
                 .with_x_label("")
                 .with_y_label(self.value_label)
                 .with_color_label("")
+                .with_y_label_format(LabelFormat::new().with_compact_notation())
                 .configure_theme(|t| {
                     t.with_palette(palette.clone())
+                        // A single series needs no legend; the title names it.
+                        .with_legend_position(if tools.len() > 1 {
+                            LegendPosition::Right
+                        } else {
+                            LegendPosition::None
+                        })
                         .with_background_color(theme.surface)
                         .with_grid_color(theme.grid)
                         .with_title_color(theme.ink)
@@ -230,6 +238,115 @@ fn main() -> Res<()> {
             value_label: "MiB",
             rows: labels.clone(),
             values: per_paper("retrieve", "peak_rss_mib", &TOOLS[..2]),
+            log: false,
+        }
+        .render(&out)?;
+    }
+
+    // Headline: incumbent / ours per metric (>1 means arxiv-search is better).
+    let retrieve = rows_of("retrieve");
+    if !retrieve.is_empty() {
+        let ok = |r: &&Value| r.get("error").is_none();
+        let med_of = |arm: &str, paper: &str, key: &str| {
+            median(
+                retrieve
+                    .iter()
+                    .filter(ok)
+                    .filter(|r| r["arm"] == arm && r["paper"] == paper)
+                    .flat_map(|r| nums(&r[key]))
+                    .collect(),
+            )
+        };
+        // Only papers where both tools actually returned the paper text.
+        let both_ok: Vec<&String> = papers
+            .iter()
+            .filter(|p| {
+                TOOLS[..2].iter().all(|t| {
+                    retrieve.iter().filter(ok).any(|r| {
+                        r["arm"] == *t
+                            && r["paper"] == p.as_str()
+                            && r["abstract_recall"].as_f64().unwrap_or(0.0) >= 0.5
+                    })
+                })
+            })
+            .collect();
+        let total = |arm: &str, key: &str| -> f64 {
+            both_ok.iter().filter_map(|p| med_of(arm, p, key)).sum()
+        };
+        let overall = |arm: &str, key: &str| {
+            median(
+                retrieve
+                    .iter()
+                    .filter(ok)
+                    .filter(|r| r["arm"] == arm)
+                    .flat_map(|r| nums(&r[key]))
+                    .collect(),
+            )
+        };
+        let mut metrics: Vec<(String, f64)> = Vec::new();
+        let (a, b) = (TOOLS[0], TOOLS[1]);
+        // The PDF-only paper dominates the cold total; report HTML papers alone too.
+        let pdf_only: Vec<&str> = data["corpus"]["papers"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|p| p["pdf_only"].as_bool().unwrap_or(false))
+            .filter_map(|p| p["id"].as_str())
+            .collect();
+        let html_cold = |arm: &str| -> f64 {
+            both_ok
+                .iter()
+                .filter(|p| !pdf_only.contains(&p.as_str()))
+                .filter_map(|p| med_of(arm, p, "cold_ms"))
+                .sum()
+        };
+        if html_cold(a) > 0.0 {
+            metrics.push(("First request (HTML papers)".into(), html_cold(b) / html_cold(a)));
+        }
+        for (label, key) in [
+            ("First request (total)", "cold_ms"),
+            ("Repeat request (total)", "warm_ms"),
+            ("Tokens in context (total)", "response_tokens"),
+        ] {
+            let ours = total(a, key);
+            if ours > 0.0 {
+                metrics.push((label.to_string(), total(b, key) / ours));
+            }
+        }
+        for (label, key) in [("Peak memory", "peak_rss_mib"), ("Startup", "startup_ms")] {
+            if let (Some(ours), Some(theirs)) = (overall(a, key), overall(b, key)) {
+                metrics.push((label.to_string(), theirs / ours));
+            }
+        }
+        let search = rows_of("search");
+        let search_med = |arm: &str, key: &str| {
+            median(search.iter().filter(|r| r["arm"] == arm).flat_map(|r| nums(&r[key])).collect())
+        };
+        if let (Some(ours), Some(theirs)) = (search_med(a, "ms"), search_med(b, "ms")) {
+            metrics.push(("Search latency".into(), theirs / ours));
+        }
+        let convert = rows_of("convert");
+        let conv_total = |arm: &str| -> f64 {
+            convert
+                .iter()
+                .filter(|r| r["arm"] == arm && r["paper"] != "1412.6980v9")
+                .filter_map(|r| median(nums(&r["samples_ms"])))
+                .sum()
+        };
+        if conv_total(a) > 0.0 {
+            metrics.push(("HTML/PDF conversion (total)".into(), conv_total(b) / conv_total(a)));
+        }
+        let mut values = BTreeMap::new();
+        values.insert(a, metrics.iter().map(|m| Some(m.1)).collect());
+        Bars {
+            name: "summary",
+            title: "arxiv-search vs arxiv-mcp-server 0.7.2 (x better, 1 = parity)".into(),
+            value_label: "x better than arxiv-mcp-server",
+            rows: metrics
+                .iter()
+                .map(|(l, r)| format!("{l}  {r:.1}x"))
+                .collect(),
+            values,
             log: false,
         }
         .render(&out)?;

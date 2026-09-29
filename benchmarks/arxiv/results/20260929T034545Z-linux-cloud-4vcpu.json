@@ -1,0 +1,1900 @@
+{
+ "environment": {
+  "date_utc": "2026-09-29T03:45:45+00:00",
+  "os": "Linux-6.18.44-fc-v37-x86_64-with-glibc2.39",
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+  "cpus": 4,
+  "mem_gib": 15.7,
+  "python": "3.11.15",
+  "rustc": "rustc 1.94.1 (e408947bf 2026-03-25)",
+  "git_sha": "e2b6621",
+  "git_dirty": true,
+  "incumbent": "arxiv-mcp-server[pdf]==0.7.2",
+  "incumbent_resolved": "0.7.2",
+  "tokenizer": "tiktoken o200k_base",
+  "network_note": "cloud container (Claude Code on the web), outbound via HTTPS proxy"
+ },
+ "config": {
+  "scenarios": "convert,search,retrieve",
+  "cold_reps": 3,
+  "warm_reps": 5,
+  "search_reps": 3,
+  "convert_iters": 10,
+  "pause": 3.5,
+  "papers": null,
+  "jina": false,
+  "label": "linux-cloud-4vcpu"
+ },
+ "corpus": {
+  "tokenizer": "o200k_base",
+  "incumbent": {
+   "requirement": "arxiv-mcp-server[pdf]==0.7.2",
+   "python": "3.11",
+   "repo": "https://github.com/blazickjp/arxiv-mcp-server"
+  },
+  "papers": [
+   {
+    "id": "1706.03762v7",
+    "note": "Attention Is All You Need; mid-size HTML"
+   },
+   {
+    "id": "1810.04805v2",
+    "note": "BERT"
+   },
+   {
+    "id": "2106.09685v2",
+    "note": "LoRA; math-heavy HTML"
+   },
+   {
+    "id": "2310.06825v1",
+    "note": "Mistral 7B; small HTML"
+   },
+   {
+    "id": "2005.14165v4",
+    "note": "GPT-3; very large HTML (~1.2 MB)"
+   },
+   {
+    "id": "2307.09288v2",
+    "note": "Llama 2; large HTML (~1 MB), many tables"
+   },
+   {
+    "id": "1412.6980v9",
+    "note": "Adam; arXiv serves a degraded ~20 KB 'Untitled Document' HTML page (quality trap)"
+   },
+   {
+    "id": "0801.1234v2",
+    "note": "No HTML rendering (404); exercises the PDF fallback",
+    "pdf_only": true
+   }
+  ],
+  "queries": [
+   {
+    "q": "ti:attention AND au:vaswani",
+    "n": 10
+   },
+   {
+    "q": "abs:\"low-rank adaptation\" AND cat:cs.CL",
+    "n": 10
+   },
+   {
+    "q": "retrieval augmented generation",
+    "n": 25
+   }
+  ]
+ },
+ "results": {
+  "convert": [
+   {
+    "arm": "arxiv-search",
+    "paper": "1706.03762v7",
+    "kind": "html",
+    "input_bytes": 188707,
+    "samples_ms": [
+     7.697288,
+     7.601956,
+     7.581617,
+     7.523422999999999,
+     6.448404,
+     9.645731,
+     6.448418,
+     6.498873,
+     6.555108,
+     6.525956
+    ],
+    "output_chars": 32768,
+    "output_tokens": 7721,
+    "unpruned_tokens": 10006,
+    "abstract_recall": 1.0
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "1706.03762v7",
+    "kind": "html",
+    "input_bytes": 188707,
+    "samples_ms": [
+     43.566027999986545,
+     41.28192799998942,
+     43.790408999939245,
+     53.187600999990536,
+     44.55705100008345,
+     44.065688000046066,
+     39.675690999956714,
+     37.21488400015005,
+     37.355011999807175,
+     36.84131599993634
+    ],
+    "output_chars": 38255,
+    "output_tokens": 9640,
+    "unpruned_tokens": null,
+    "abstract_recall": 1.0
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "1810.04805v2",
+    "kind": "html",
+    "input_bytes": 263006,
+    "samples_ms": [
+     11.534925,
+     9.779748,
+     9.625969999999999,
+     9.921538,
+     10.54229,
+     9.790904,
+     9.663519,
+     9.835752,
+     9.619588,
+     9.833224
+    ],
+    "output_chars": 51529,
+    "output_tokens": 12316,
+    "unpruned_tokens": 16249,
+    "abstract_recall": 1.0
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "1810.04805v2",
+    "kind": "html",
+    "input_bytes": 263006,
+    "samples_ms": [
+     47.49308300006305,
+     65.6079140003385,
+     44.45839600020918,
+     42.65467899995201,
+     42.4050769997848,
+     41.838353000002826,
+     42.04744300022867,
+     39.76011799977641,
+     39.96844699986468,
+     39.541482999993605
+    ],
+    "output_chars": 63277,
+    "output_tokens": 16224,
+    "unpruned_tokens": null,
+    "abstract_recall": 1.0
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "2106.09685v2",
+    "kind": "html",
+    "input_bytes": 505908,
+    "samples_ms": [
+     27.691025,
+     32.422445,
+     32.084029,
+     33.977975,
+     31.462309,
+     30.618492,
+     18.268272,
+     17.81029,
+     17.691789999999997,
+     18.908302
+    ],
+    "output_chars": 74504,
+    "output_tokens": 22244,
+    "unpruned_tokens": 27381,
+    "abstract_recall": 1.0
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "2106.09685v2",
+    "kind": "html",
+    "input_bytes": 505908,
+    "samples_ms": [
+     141.2135909999961,
+     128.10016799994628,
+     124.66373300003397,
+     176.22999400009576,
+     129.23860799992326,
+     112.36942799996541,
+     108.93210599988379,
+     108.46817900028327,
+     112.59893599981297,
+     104.19038700001693
+    ],
+    "output_chars": 84632,
+    "output_tokens": 26419,
+    "unpruned_tokens": null,
+    "abstract_recall": 1.0
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "2310.06825v1",
+    "kind": "html",
+    "input_bytes": 114594,
+    "samples_ms": [
+     8.428243,
+     7.727919,
+     7.686929999999999,
+     7.743486,
+     7.665881000000001,
+     7.795566,
+     7.784873,
+     7.002012000000001,
+     4.94671,
+     4.873133
+    ],
+    "output_chars": 19582,
+    "output_tokens": 4962,
+    "unpruned_tokens": 7396,
+    "abstract_recall": 1.0
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "2310.06825v1",
+    "kind": "html",
+    "input_bytes": 114594,
+    "samples_ms": [
+     20.356905999960873,
+     19.90520600020318,
+     17.235170000276412,
+     20.21397899989097,
+     17.332864999843878,
+     18.525949999911973,
+     17.649826999786455,
+     18.286315000295872,
+     16.470852000111336,
+     16.718330000003334
+    ],
+    "output_chars": 24256,
+    "output_tokens": 6522,
+    "unpruned_tokens": null,
+    "abstract_recall": 1.0
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "2005.14165v4",
+    "kind": "html",
+    "input_bytes": 1220894,
+    "samples_ms": [
+     67.427326,
+     61.058802,
+     57.53937,
+     88.450496,
+     70.142436,
+     58.964803,
+     58.317656,
+     60.28637,
+     60.335505,
+     64.458077
+    ],
+    "output_chars": 253378,
+    "output_tokens": 51802,
+    "unpruned_tokens": 60298,
+    "abstract_recall": 1.0
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "2005.14165v4",
+    "kind": "html",
+    "input_bytes": 1220894,
+    "samples_ms": [
+     217.5676150000072,
+     216.8102849996103,
+     213.5644360000697,
+     215.7729170003222,
+     213.8690960000531,
+     213.70850099992822,
+     212.22668300015357,
+     203.08080099994186,
+     203.56946999982029,
+     201.86212899989187
+    ],
+    "output_chars": 233913,
+    "output_tokens": 61013,
+    "unpruned_tokens": null,
+    "abstract_recall": 1.0
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "2307.09288v2",
+    "kind": "html",
+    "input_bytes": 1071548,
+    "samples_ms": [
+     60.920474,
+     56.807982,
+     49.77417,
+     50.342927,
+     53.034722,
+     59.262946,
+     53.172858000000005,
+     51.403831,
+     50.965452,
+     50.263504
+    ],
+    "output_chars": 227967,
+    "output_tokens": 57166,
+    "unpruned_tokens": 70172,
+    "abstract_recall": 1.0
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "2307.09288v2",
+    "kind": "html",
+    "input_bytes": 1071548,
+    "samples_ms": [
+     185.40763800001514,
+     174.61934399989332,
+     167.62622999976884,
+     169.6328530001665,
+     168.56517499991241,
+     169.1447230000449,
+     165.40018300020165,
+     156.1768999999913,
+     152.67057399978512,
+     153.73826599989115
+    ],
+    "output_chars": 256779,
+    "output_tokens": 67867,
+    "unpruned_tokens": null,
+    "abstract_recall": 1.0
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "1412.6980v9",
+    "kind": "html",
+    "input_bytes": 20827,
+    "samples_ms": [
+     0.257861,
+     0.07917700000000001,
+     0.063697,
+     0.06900099999999999,
+     0.054794999999999996,
+     1.3665120000000002,
+     0.195112,
+     0.06612900000000001,
+     0.10078,
+     0.069939
+    ],
+    "output_chars": 67,
+    "output_tokens": 24,
+    "unpruned_tokens": 24,
+    "abstract_recall": 0.011
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "1412.6980v9",
+    "kind": "html",
+    "input_bytes": 20827,
+    "samples_ms": [
+     0.8630679999441782,
+     0.31846599995333236,
+     0.2542030001677631,
+     0.20443699986572028,
+     0.1926850000018021,
+     0.1878339999166201,
+     0.1930170001287479,
+     0.24680500018803286,
+     0.19965399997090572,
+     0.18290399975740002
+    ],
+    "output_chars": 35,
+    "output_tokens": 12,
+    "unpruned_tokens": null,
+    "abstract_recall": 0.011
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "0801.1234v2",
+    "kind": "pdf",
+    "input_bytes": 129454,
+    "samples_ms": [
+     45.201620999999996,
+     44.154306,
+     41.236101999999995,
+     39.638797000000004,
+     40.569329,
+     39.660719,
+     43.642798,
+     40.904809,
+     45.604834,
+     40.359978
+    ],
+    "output_chars": 47636,
+    "output_tokens": 10170,
+    "unpruned_tokens": 11373,
+    "abstract_recall": 1.0
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "0801.1234v2",
+    "kind": "pdf",
+    "input_bytes": 129454,
+    "samples_ms": [
+     3504.278152000097,
+     3486.385505999806,
+     3458.0365540000457,
+     3374.2269780000242,
+     3308.339692000118,
+     3455.3074989999004,
+     3620.483753999906,
+     3435.2301999997508,
+     3634.78162399997,
+     3673.5988059999727
+    ],
+    "output_chars": 52596,
+    "output_tokens": 12009,
+    "unpruned_tokens": null,
+    "abstract_recall": 1.0
+   }
+  ],
+  "search": [
+   {
+    "arm": "arxiv-search",
+    "query": "ti:attention AND au:vaswani",
+    "rep": 0,
+    "ms": 420.426561000113,
+    "is_error": false,
+    "response_tokens": 2450
+   },
+   {
+    "arm": "arxiv-search",
+    "query": "abs:\"low-rank adaptation\" AND cat:cs.CL",
+    "rep": 0,
+    "ms": 72.03413899969746,
+    "is_error": false,
+    "response_tokens": 3072
+   },
+   {
+    "arm": "arxiv-search",
+    "query": "retrieval augmented generation",
+    "rep": 0,
+    "ms": 93.85619400018186,
+    "is_error": false,
+    "response_tokens": 8821
+   },
+   {
+    "arm": "arxiv-search",
+    "query": "ti:attention AND au:vaswani",
+    "rep": 1,
+    "ms": 70.94731500001217,
+    "is_error": false,
+    "response_tokens": 2450
+   },
+   {
+    "arm": "arxiv-search",
+    "query": "abs:\"low-rank adaptation\" AND cat:cs.CL",
+    "rep": 1,
+    "ms": 71.52365000001737,
+    "is_error": false,
+    "response_tokens": 3072
+   },
+   {
+    "arm": "arxiv-search",
+    "query": "retrieval augmented generation",
+    "rep": 1,
+    "ms": 94.15046100002655,
+    "is_error": false,
+    "response_tokens": 8821
+   },
+   {
+    "arm": "arxiv-search",
+    "query": "ti:attention AND au:vaswani",
+    "rep": 2,
+    "ms": 72.40120500000558,
+    "is_error": false,
+    "response_tokens": 2450
+   },
+   {
+    "arm": "arxiv-search",
+    "query": "abs:\"low-rank adaptation\" AND cat:cs.CL",
+    "rep": 2,
+    "ms": 73.1040910000047,
+    "is_error": false,
+    "response_tokens": 3072
+   },
+   {
+    "arm": "arxiv-search",
+    "query": "retrieval augmented generation",
+    "rep": 2,
+    "ms": 89.96416999980283,
+    "is_error": false,
+    "response_tokens": 8821
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "query": "ti:attention AND au:vaswani",
+    "rep": 0,
+    "ms": 385.8311029998731,
+    "is_error": false,
+    "response_tokens": 2917
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "query": "abs:\"low-rank adaptation\" AND cat:cs.CL",
+    "rep": 0,
+    "ms": 530.3611120002643,
+    "is_error": false,
+    "response_tokens": 3669
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "query": "retrieval augmented generation",
+    "rep": 0,
+    "ms": 482.1772569998757,
+    "is_error": false,
+    "response_tokens": 9877
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "query": "ti:attention AND au:vaswani",
+    "rep": 1,
+    "ms": 531.2430980002318,
+    "is_error": false,
+    "response_tokens": 2917
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "query": "abs:\"low-rank adaptation\" AND cat:cs.CL",
+    "rep": 1,
+    "ms": 451.5725400001429,
+    "is_error": false,
+    "response_tokens": 3669
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "query": "retrieval augmented generation",
+    "rep": 1,
+    "ms": 537.524227999711,
+    "is_error": false,
+    "response_tokens": 9877
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "query": "ti:attention AND au:vaswani",
+    "rep": 2,
+    "ms": 507.13955399987753,
+    "is_error": false,
+    "response_tokens": 2917
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "query": "abs:\"low-rank adaptation\" AND cat:cs.CL",
+    "rep": 2,
+    "ms": 510.0981650002723,
+    "is_error": false,
+    "response_tokens": 3669
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "query": "retrieval augmented generation",
+    "rep": 2,
+    "ms": 593.6993179998353,
+    "is_error": false,
+    "response_tokens": 9877
+   }
+  ],
+  "retrieve": [
+   {
+    "arm": "arxiv-search",
+    "paper": "1706.03762v7",
+    "startup_ms": 91.18123700000069,
+    "cold_ms": 529.2047719999573,
+    "is_error": false,
+    "warm_ms": [
+     1.2875799998255388,
+     1.3059709999652114,
+     1.6676289997121785,
+     1.0172719998990942,
+     1.187809000384732
+    ],
+    "peak_rss_mib": 23.0,
+    "source": "html",
+    "response_chars": 35622,
+    "response_tokens": 8728,
+    "content_chars": 32768,
+    "content_tokens": 7721,
+    "abstract_recall": 1.0,
+    "rep": 0
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "1706.03762v7",
+    "startup_ms": 670.0335470000027,
+    "cold_ms": 637.4191310001152,
+    "is_error": false,
+    "warm_ms": [
+     5.302359000324941,
+     4.955950000294251,
+     4.775495000103547,
+     5.478281000250718,
+     5.017155000132334
+    ],
+    "peak_rss_mib": 83.2,
+    "source": "html",
+    "response_chars": 39986,
+    "response_tokens": 10376,
+    "content_chars": 38255,
+    "content_tokens": 9640,
+    "abstract_recall": 1.0,
+    "rep": 0
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "1706.03762v7",
+    "cold_ms": 258.11035200013066,
+    "source": "html",
+    "response_bytes": 188707,
+    "response_chars": 187983,
+    "response_tokens": 67042,
+    "abstract_recall": 1.0,
+    "rep": 0
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "1810.04805v2",
+    "startup_ms": 106.5707040002053,
+    "cold_ms": 640.7499510000889,
+    "is_error": false,
+    "warm_ms": [
+     1.4441399998759152,
+     1.1872919999404985,
+     1.2188509999759845,
+     1.0759429997051484,
+     1.3084070001241344
+    ],
+    "peak_rss_mib": 23.0,
+    "source": "html",
+    "response_chars": 54359,
+    "response_tokens": 13413,
+    "content_chars": 51529,
+    "content_tokens": 12316,
+    "abstract_recall": 1.0,
+    "rep": 0
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "1810.04805v2",
+    "startup_ms": 683.000815000014,
+    "cold_ms": 729.1353340001479,
+    "is_error": false,
+    "warm_ms": [
+     6.6839820001405315,
+     6.4548099999228725,
+     5.995897000047989,
+     5.703007999727561,
+     5.994864000058442
+    ],
+    "peak_rss_mib": 83.7,
+    "source": "html",
+    "response_chars": 66595,
+    "response_tokens": 17745,
+    "content_chars": 63277,
+    "content_tokens": 16224,
+    "abstract_recall": 1.0,
+    "rep": 0
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "1810.04805v2",
+    "cold_ms": 265.31773900023836,
+    "source": "html",
+    "response_bytes": 263006,
+    "response_chars": 262097,
+    "response_tokens": 90701,
+    "abstract_recall": 1.0,
+    "rep": 0
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "2106.09685v2",
+    "startup_ms": 91.4492940000855,
+    "cold_ms": 561.7622749996372,
+    "is_error": false,
+    "warm_ms": [
+     1.8683349999264465,
+     1.8503020000935066,
+     1.7369199999848206,
+     1.7231960000572144,
+     1.746835000176361
+    ],
+    "peak_rss_mib": 23.0,
+    "source": "html",
+    "response_chars": 80965,
+    "response_tokens": 25212,
+    "content_chars": 74504,
+    "content_tokens": 22244,
+    "abstract_recall": 1.0,
+    "rep": 0
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "2106.09685v2",
+    "startup_ms": 714.9376249999477,
+    "cold_ms": 753.4316930000386,
+    "is_error": false,
+    "warm_ms": [
+     7.902027999989514,
+     6.671523000022717,
+     9.59471099986331,
+     6.913603999691986,
+     6.933507999747235
+    ],
+    "peak_rss_mib": 85.9,
+    "source": "html",
+    "response_chars": 90797,
+    "response_tokens": 28582,
+    "content_chars": 84632,
+    "content_tokens": 26419,
+    "abstract_recall": 1.0,
+    "rep": 0
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "2106.09685v2",
+    "cold_ms": 283.49838699978136,
+    "source": "html",
+    "response_bytes": 505908,
+    "response_chars": 503929,
+    "response_tokens": 185323,
+    "abstract_recall": 1.0,
+    "rep": 0
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "2310.06825v1",
+    "startup_ms": 90.18292000018846,
+    "cold_ms": 516.0075000003417,
+    "is_error": false,
+    "warm_ms": [
+     1.4705149997098488,
+     1.1243849999118538,
+     1.2682470000981994,
+     1.1269239998910052,
+     1.0245059997942008
+    ],
+    "peak_rss_mib": 23.2,
+    "source": "html",
+    "response_chars": 21523,
+    "response_tokens": 5635,
+    "content_chars": 19582,
+    "content_tokens": 4962,
+    "abstract_recall": 1.0,
+    "rep": 0
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "2310.06825v1",
+    "startup_ms": 673.717258999659,
+    "cold_ms": 581.1216080001032,
+    "is_error": false,
+    "warm_ms": [
+     6.263017999572185,
+     5.527196999992157,
+     5.333149999842135,
+     5.049252999924647,
+     4.7793089997867355
+    ],
+    "peak_rss_mib": 81.5,
+    "source": "html",
+    "response_chars": 25948,
+    "response_tokens": 7326,
+    "content_chars": 24256,
+    "content_tokens": 6522,
+    "abstract_recall": 1.0,
+    "rep": 0
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "2310.06825v1",
+    "cold_ms": 232.3287569997774,
+    "source": "html",
+    "response_bytes": 114594,
+    "response_chars": 114018,
+    "response_tokens": 41307,
+    "abstract_recall": 1.0,
+    "rep": 0
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "2005.14165v4",
+    "startup_ms": 90.9764709999763,
+    "cold_ms": 575.5783489998976,
+    "is_error": false,
+    "warm_ms": [
+     3.8760909997108683,
+     4.014391000055184,
+     5.225891000009142,
+     4.625721000138583,
+     5.0030470001729554
+    ],
+    "peak_rss_mib": 24.9,
+    "source": "html",
+    "response_chars": 262912,
+    "response_tokens": 55799,
+    "content_chars": 253378,
+    "content_tokens": 51802,
+    "abstract_recall": 1.0,
+    "rep": 0
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "2005.14165v4",
+    "startup_ms": 645.2226409996911,
+    "cold_ms": 1006.3102390004133,
+    "is_error": false,
+    "warm_ms": [
+     8.062499000061507,
+     8.633491000182403,
+     8.656407999751536,
+     8.03104800024812,
+     7.723403999989387
+    ],
+    "peak_rss_mib": 87.3,
+    "source": "html",
+    "response_chars": 244647,
+    "response_tokens": 65066,
+    "content_chars": 233913,
+    "content_tokens": 61013,
+    "abstract_recall": 1.0,
+    "rep": 0
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "2005.14165v4",
+    "cold_ms": 291.96084900013375,
+    "source": "html",
+    "response_bytes": 1220894,
+    "response_chars": 1218220,
+    "response_tokens": 462959,
+    "abstract_recall": 1.0,
+    "rep": 0
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "2307.09288v2",
+    "startup_ms": 91.05032600018603,
+    "cold_ms": 638.2054140003675,
+    "is_error": false,
+    "warm_ms": [
+     4.087841000000481,
+     3.8405710001825355,
+     3.5143000000061875,
+     3.727570000137348,
+     4.027532000236533
+    ],
+    "peak_rss_mib": 23.0,
+    "source": "html",
+    "response_chars": 242256,
+    "response_tokens": 63930,
+    "content_chars": 227967,
+    "content_tokens": 57166,
+    "abstract_recall": 1.0,
+    "rep": 0
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "2307.09288v2",
+    "startup_ms": 653.641566999795,
+    "cold_ms": 851.3951879999695,
+    "is_error": false,
+    "warm_ms": [
+     12.911958000131563,
+     9.087398000247049,
+     8.957086999998864,
+     9.25665700015088,
+     8.980715999769018
+    ],
+    "peak_rss_mib": 90.9,
+    "source": "html",
+    "response_chars": 268531,
+    "response_tokens": 72483,
+    "content_chars": 256779,
+    "content_tokens": 67867,
+    "abstract_recall": 1.0,
+    "rep": 0
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "2307.09288v2",
+    "cold_ms": 288.52274500013664,
+    "source": "html",
+    "response_bytes": 1071548,
+    "response_chars": 1067506,
+    "response_tokens": 384590,
+    "abstract_recall": 1.0,
+    "rep": 0
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "1412.6980v9",
+    "startup_ms": 90.6783299997187,
+    "cold_ms": 693.4977239998261,
+    "is_error": false,
+    "warm_ms": [
+     1.6303859997606196,
+     1.4143620001050294,
+     1.517535999937536,
+     1.439329000277212,
+     1.2682139999924402
+    ],
+    "peak_rss_mib": 23.0,
+    "source": "pdf",
+    "response_chars": 45974,
+    "response_tokens": 14370,
+    "content_chars": 43361,
+    "content_tokens": 13379,
+    "abstract_recall": 0.989,
+    "rep": 0
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "1412.6980v9",
+    "startup_ms": 753.5255339998912,
+    "cold_ms": 573.7706429999889,
+    "is_error": false,
+    "warm_ms": [
+     5.476398999689991,
+     4.648842999813496,
+     4.473974000120506,
+     4.587026000081096,
+     4.905162999875756
+    ],
+    "peak_rss_mib": 80.6,
+    "source": "html",
+    "response_chars": 406,
+    "response_tokens": 135,
+    "content_chars": 35,
+    "content_tokens": 12,
+    "abstract_recall": 0.011,
+    "rep": 0
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "1412.6980v9",
+    "cold_ms": 202.5211849995685,
+    "source": "html",
+    "response_bytes": 20827,
+    "response_chars": 20826,
+    "response_tokens": 8219,
+    "abstract_recall": 0.092,
+    "rep": 0
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "0801.1234v2",
+    "startup_ms": 100.3849439998703,
+    "cold_ms": 929.208498999742,
+    "is_error": false,
+    "warm_ms": [
+     2.439491000131966,
+     1.4563979998456489,
+     1.2968149999323941,
+     1.4007489999130485,
+     1.4969329999985348
+    ],
+    "peak_rss_mib": 23.0,
+    "source": "pdf",
+    "response_chars": 49960,
+    "response_tokens": 10908,
+    "content_chars": 47636,
+    "content_tokens": 10170,
+    "abstract_recall": 1.0,
+    "rep": 0
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "0801.1234v2",
+    "startup_ms": 672.9609819999496,
+    "cold_ms": 7518.875505000324,
+    "is_error": false,
+    "warm_ms": [
+     6.661810000423429,
+     6.267087000196625,
+     5.251466000117944,
+     5.0279900001442,
+     5.211043000144855
+    ],
+    "peak_rss_mib": 430.9,
+    "source": "pdf",
+    "response_chars": 54610,
+    "response_tokens": 13220,
+    "content_chars": 52596,
+    "content_tokens": 12009,
+    "abstract_recall": 1.0,
+    "rep": 0
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "0801.1234v2",
+    "cold_ms": 551.3350539999919,
+    "source": "pdf",
+    "response_bytes": 129454,
+    "rep": 0
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "1706.03762v7",
+    "startup_ms": 666.4124630001425,
+    "cold_ms": 1114.6548980000262,
+    "is_error": false,
+    "warm_ms": [
+     5.120766000345611,
+     4.968241999904421,
+     5.303353000272182,
+     4.592245000367257,
+     4.995798999971157
+    ],
+    "peak_rss_mib": 83.1,
+    "source": "html",
+    "response_chars": 39986,
+    "response_tokens": 10376,
+    "content_chars": 38255,
+    "content_tokens": 9640,
+    "abstract_recall": 1.0,
+    "rep": 1
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "1706.03762v7",
+    "startup_ms": 88.30487500017625,
+    "cold_ms": 241.71383999964746,
+    "is_error": false,
+    "warm_ms": [
+     1.1219960001653817,
+     1.173356999970565,
+     1.2146259996370645,
+     1.0414380003567203,
+     0.9036460000970692
+    ],
+    "peak_rss_mib": 23.0,
+    "source": "html",
+    "response_chars": 35557,
+    "response_tokens": 8702,
+    "content_chars": 32768,
+    "content_tokens": 7721,
+    "abstract_recall": 1.0,
+    "rep": 1
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "1706.03762v7",
+    "cold_ms": 585.3737630000069,
+    "source": "html",
+    "response_bytes": 188707,
+    "response_chars": 187983,
+    "response_tokens": 67042,
+    "abstract_recall": 1.0,
+    "rep": 1
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "1810.04805v2",
+    "startup_ms": 686.0474760001125,
+    "cold_ms": 1143.9093830003912,
+    "is_error": false,
+    "warm_ms": [
+     10.174985000048764,
+     8.578610999848024,
+     8.196878000035213,
+     8.103438000034657,
+     8.22532299980594
+    ],
+    "peak_rss_mib": 83.5,
+    "source": "html",
+    "response_chars": 66595,
+    "response_tokens": 17745,
+    "content_chars": 63277,
+    "content_tokens": 16224,
+    "abstract_recall": 1.0,
+    "rep": 1
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "1810.04805v2",
+    "startup_ms": 86.9560050000473,
+    "cold_ms": 336.1832969999341,
+    "is_error": false,
+    "warm_ms": [
+     1.6101499995784252,
+     1.5788840000823257,
+     1.4899579996381362,
+     1.7575450001459103,
+     1.4169000000947563
+    ],
+    "peak_rss_mib": 23.0,
+    "source": "html",
+    "response_chars": 54348,
+    "response_tokens": 13415,
+    "content_chars": 51529,
+    "content_tokens": 12316,
+    "abstract_recall": 1.0,
+    "rep": 1
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "1810.04805v2",
+    "cold_ms": 451.97319999988395,
+    "source": "html",
+    "response_bytes": 263006,
+    "response_chars": 262097,
+    "response_tokens": 90701,
+    "abstract_recall": 1.0,
+    "rep": 1
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "2106.09685v2",
+    "startup_ms": 653.5824620000312,
+    "cold_ms": 1247.951581000052,
+    "is_error": false,
+    "warm_ms": [
+     6.038579000232858,
+     5.814096999984031,
+     5.704701000013301,
+     5.475351999848499,
+     5.601728000328876
+    ],
+    "peak_rss_mib": 85.5,
+    "source": "html",
+    "response_chars": 90797,
+    "response_tokens": 28582,
+    "content_chars": 84632,
+    "content_tokens": 26419,
+    "abstract_recall": 1.0,
+    "rep": 1
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "2106.09685v2",
+    "startup_ms": 82.51887100004751,
+    "cold_ms": 308.23830400004226,
+    "is_error": false,
+    "warm_ms": [
+     1.994150999962585,
+     1.7575020001459052,
+     1.895837000120082,
+     1.4761379998162738,
+     1.6999100002976775
+    ],
+    "peak_rss_mib": 23.0,
+    "source": "html",
+    "response_chars": 80869,
+    "response_tokens": 25175,
+    "content_chars": 74504,
+    "content_tokens": 22244,
+    "abstract_recall": 1.0,
+    "rep": 1
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "2106.09685v2",
+    "cold_ms": 481.11023799992836,
+    "source": "html",
+    "response_bytes": 505908,
+    "response_chars": 503929,
+    "response_tokens": 185323,
+    "abstract_recall": 1.0,
+    "rep": 1
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "2310.06825v1",
+    "startup_ms": 660.0805900002342,
+    "cold_ms": 1181.4863569998124,
+    "is_error": false,
+    "warm_ms": [
+     5.450655999993614,
+     4.812197000319429,
+     4.41721300012432,
+     4.2685489997893455,
+     4.524973000116006
+    ],
+    "peak_rss_mib": 81.7,
+    "source": "html",
+    "response_chars": 25948,
+    "response_tokens": 7326,
+    "content_chars": 24256,
+    "content_tokens": 6522,
+    "abstract_recall": 1.0,
+    "rep": 1
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "2310.06825v1",
+    "startup_ms": 87.305348999962,
+    "cold_ms": 242.11779999995997,
+    "is_error": false,
+    "warm_ms": [
+     1.2063590002071578,
+     1.0702170002332423,
+     0.7778890003464767,
+     0.7228649997159664,
+     0.7548250000581902
+    ],
+    "peak_rss_mib": 23.0,
+    "source": "html",
+    "response_chars": 21199,
+    "response_tokens": 5541,
+    "content_chars": 19582,
+    "content_tokens": 4962,
+    "abstract_recall": 1.0,
+    "rep": 1
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "2310.06825v1",
+    "cold_ms": 463.218113000039,
+    "source": "html",
+    "response_bytes": 114594,
+    "response_chars": 114018,
+    "response_tokens": 41307,
+    "abstract_recall": 1.0,
+    "rep": 1
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "2005.14165v4",
+    "startup_ms": 712.1639900001355,
+    "cold_ms": 1431.7185329996391,
+    "is_error": false,
+    "warm_ms": [
+     8.406668000134232,
+     7.769383000322705,
+     8.389431000068726,
+     7.596765000016603,
+     7.530428999871219
+    ],
+    "peak_rss_mib": 87.4,
+    "source": "html",
+    "response_chars": 244647,
+    "response_tokens": 65066,
+    "content_chars": 233913,
+    "content_tokens": 61013,
+    "abstract_recall": 1.0,
+    "rep": 1
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "2005.14165v4",
+    "startup_ms": 125.13751000005868,
+    "cold_ms": 656.2759769999502,
+    "is_error": false,
+    "warm_ms": [
+     4.768438000155584,
+     4.119312000057107,
+     3.656390999822179,
+     3.59530099967742,
+     3.548292999767
+    ],
+    "peak_rss_mib": 24.2,
+    "source": "html",
+    "response_chars": 262912,
+    "response_tokens": 55799,
+    "content_chars": 253378,
+    "content_tokens": 51802,
+    "abstract_recall": 1.0,
+    "rep": 1
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "2005.14165v4",
+    "cold_ms": 322.65516799998295,
+    "source": "html",
+    "response_bytes": 1220894,
+    "response_chars": 1218220,
+    "response_tokens": 462959,
+    "abstract_recall": 1.0,
+    "rep": 1
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "2307.09288v2",
+    "startup_ms": 668.3060780001142,
+    "cold_ms": 1039.811772000121,
+    "is_error": false,
+    "warm_ms": [
+     10.642279999956372,
+     13.123688000177935,
+     12.935837999975774,
+     13.113231000261294,
+     9.725034000439337
+    ],
+    "peak_rss_mib": 91.3,
+    "source": "html",
+    "response_chars": 268531,
+    "response_tokens": 72483,
+    "content_chars": 256779,
+    "content_tokens": 67867,
+    "abstract_recall": 1.0,
+    "rep": 1
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "2307.09288v2",
+    "startup_ms": 85.31608600014806,
+    "cold_ms": 636.3340150001022,
+    "is_error": false,
+    "warm_ms": [
+     3.3134969999082386,
+     3.137608000088221,
+     3.3847089998744195,
+     3.319788999760931,
+     3.0206100000214064
+    ],
+    "peak_rss_mib": 23.1,
+    "source": "html",
+    "response_chars": 242256,
+    "response_tokens": 63930,
+    "content_chars": 227967,
+    "content_tokens": 57166,
+    "abstract_recall": 1.0,
+    "rep": 1
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "2307.09288v2",
+    "cold_ms": 293.6044269999911,
+    "source": "html",
+    "response_bytes": 1071548,
+    "response_chars": 1067506,
+    "response_tokens": 384590,
+    "abstract_recall": 1.0,
+    "rep": 1
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "1412.6980v9",
+    "startup_ms": 630.6010110001807,
+    "cold_ms": 769.7952980001901,
+    "is_error": false,
+    "warm_ms": [
+     7.9766140001993335,
+     8.853080999870144,
+     3.989641999851301,
+     3.78523800009134,
+     3.741736999927525
+    ],
+    "peak_rss_mib": 80.6,
+    "source": "html",
+    "response_chars": 406,
+    "response_tokens": 135,
+    "content_chars": 35,
+    "content_tokens": 12,
+    "abstract_recall": 0.011,
+    "rep": 1
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "1412.6980v9",
+    "startup_ms": 87.86154500012344,
+    "cold_ms": 684.2642149999847,
+    "is_error": false,
+    "warm_ms": [
+     1.306022999870038,
+     1.2746080001306836,
+     1.3877989999855345,
+     1.1994090000371216,
+     1.0635440003170515
+    ],
+    "peak_rss_mib": 23.0,
+    "source": "pdf",
+    "response_chars": 45974,
+    "response_tokens": 14370,
+    "content_chars": 43361,
+    "content_tokens": 13379,
+    "abstract_recall": 0.989,
+    "rep": 1
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "1412.6980v9",
+    "cold_ms": 240.1254780002091,
+    "source": "html",
+    "response_bytes": 20827,
+    "response_chars": 20826,
+    "response_tokens": 8219,
+    "abstract_recall": 0.092,
+    "rep": 1
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "0801.1234v2",
+    "startup_ms": 655.635306000022,
+    "cold_ms": 7706.458004000069,
+    "is_error": false,
+    "warm_ms": [
+     6.545784999616444,
+     5.311319999691477,
+     6.366858000092179,
+     5.320813999787788,
+     5.2334379997773794
+    ],
+    "peak_rss_mib": 431.6,
+    "source": "pdf",
+    "response_chars": 54610,
+    "response_tokens": 13220,
+    "content_chars": 52596,
+    "content_tokens": 12009,
+    "abstract_recall": 1.0,
+    "rep": 1
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "0801.1234v2",
+    "startup_ms": 83.7441899998339,
+    "cold_ms": 941.4057009998942,
+    "is_error": false,
+    "warm_ms": [
+     1.2551840000014636,
+     1.0285710000061954,
+     1.3129619997016562,
+     1.0216379996563774,
+     1.0199769999417185
+    ],
+    "peak_rss_mib": 23.0,
+    "source": "pdf",
+    "response_chars": 49960,
+    "response_tokens": 10908,
+    "content_chars": 47636,
+    "content_tokens": 10170,
+    "abstract_recall": 1.0,
+    "rep": 1
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "0801.1234v2",
+    "cold_ms": 248.92839699987235,
+    "source": "pdf",
+    "response_bytes": 129454,
+    "rep": 1
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "1706.03762v7",
+    "startup_ms": 90.26674699998694,
+    "cold_ms": 247.81655100014177,
+    "is_error": false,
+    "warm_ms": [
+     1.2988449998374563,
+     1.0245200001008925,
+     0.9263329998248082,
+     0.8720799996808637,
+     1.0226670001429738
+    ],
+    "peak_rss_mib": 23.0,
+    "source": "html",
+    "response_chars": 35622,
+    "response_tokens": 8728,
+    "content_chars": 32768,
+    "content_tokens": 7721,
+    "abstract_recall": 1.0,
+    "rep": 2
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "1706.03762v7",
+    "startup_ms": 670.7699080002385,
+    "cold_ms": 612.0877519997521,
+    "is_error": false,
+    "warm_ms": [
+     11.240389000249706,
+     5.504034999830765,
+     4.810600999917369,
+     4.882880999957706,
+     4.492561999995814
+    ],
+    "peak_rss_mib": 83.2,
+    "source": "html",
+    "response_chars": 39986,
+    "response_tokens": 10376,
+    "content_chars": 38255,
+    "content_tokens": 9640,
+    "abstract_recall": 1.0,
+    "rep": 2
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "1706.03762v7",
+    "cold_ms": 234.6151709998594,
+    "source": "html",
+    "response_bytes": 188707,
+    "response_chars": 187983,
+    "response_tokens": 67042,
+    "abstract_recall": 1.0,
+    "rep": 2
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "1810.04805v2",
+    "startup_ms": 84.87486699959845,
+    "cold_ms": 570.8305640000617,
+    "is_error": false,
+    "warm_ms": [
+     1.3757920000898594,
+     1.284077000036632,
+     1.2149300000601215,
+     1.0987330001626106,
+     1.5336810001826962
+    ],
+    "peak_rss_mib": 23.0,
+    "source": "html",
+    "response_chars": 54359,
+    "response_tokens": 13413,
+    "content_chars": 51529,
+    "content_tokens": 12316,
+    "abstract_recall": 1.0,
+    "rep": 2
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "1810.04805v2",
+    "startup_ms": 604.9901080000382,
+    "cold_ms": 669.0467209996314,
+    "is_error": false,
+    "warm_ms": [
+     5.9987399999954505,
+     7.682999000280688,
+     36.65415199975541,
+     7.443802000125288,
+     7.58999399977256
+    ],
+    "peak_rss_mib": 83.4,
+    "source": "html",
+    "response_chars": 66595,
+    "response_tokens": 17745,
+    "content_chars": 63277,
+    "content_tokens": 16224,
+    "abstract_recall": 1.0,
+    "rep": 2
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "1810.04805v2",
+    "cold_ms": 270.01509100000476,
+    "source": "html",
+    "response_bytes": 263006,
+    "response_chars": 262097,
+    "response_tokens": 90701,
+    "abstract_recall": 1.0,
+    "rep": 2
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "2106.09685v2",
+    "startup_ms": 84.4541369997387,
+    "cold_ms": 686.1278349997519,
+    "is_error": false,
+    "warm_ms": [
+     1.632238000183861,
+     1.671390999945288,
+     1.5275900000233378,
+     1.5147840003919555,
+     1.461915999698249
+    ],
+    "peak_rss_mib": 23.0,
+    "source": "html",
+    "response_chars": 80965,
+    "response_tokens": 25212,
+    "content_chars": 74504,
+    "content_tokens": 22244,
+    "abstract_recall": 1.0,
+    "rep": 2
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "2106.09685v2",
+    "startup_ms": 618.0270810000366,
+    "cold_ms": 749.5691620001708,
+    "is_error": false,
+    "warm_ms": [
+     6.13076399986312,
+     6.214848999661626,
+     6.3115479997577495,
+     5.571942000187846,
+     5.727033999846753
+    ],
+    "peak_rss_mib": 85.8,
+    "source": "html",
+    "response_chars": 90797,
+    "response_tokens": 28582,
+    "content_chars": 84632,
+    "content_tokens": 26419,
+    "abstract_recall": 1.0,
+    "rep": 2
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "2106.09685v2",
+    "cold_ms": 263.926857000115,
+    "source": "html",
+    "response_bytes": 505908,
+    "response_chars": 503929,
+    "response_tokens": 185323,
+    "abstract_recall": 1.0,
+    "rep": 2
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "2310.06825v1",
+    "startup_ms": 84.17313700010709,
+    "cold_ms": 493.81711100022585,
+    "is_error": false,
+    "warm_ms": [
+     1.029492000270693,
+     0.9883930001706176,
+     0.808296999821323,
+     0.769410999964748,
+     0.7554539997727261
+    ],
+    "peak_rss_mib": 23.0,
+    "source": "html",
+    "response_chars": 21523,
+    "response_tokens": 5635,
+    "content_chars": 19582,
+    "content_tokens": 4962,
+    "abstract_recall": 1.0,
+    "rep": 2
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "2310.06825v1",
+    "startup_ms": 651.2176000001091,
+    "cold_ms": 646.2838440002088,
+    "is_error": false,
+    "warm_ms": [
+     5.193956999846705,
+     4.8742379999566765,
+     5.462864000037371,
+     4.753092000100878,
+     5.27260600028967
+    ],
+    "peak_rss_mib": 81.6,
+    "source": "html",
+    "response_chars": 25948,
+    "response_tokens": 7326,
+    "content_chars": 24256,
+    "content_tokens": 6522,
+    "abstract_recall": 1.0,
+    "rep": 2
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "2310.06825v1",
+    "cold_ms": 240.42344800000137,
+    "source": "html",
+    "response_bytes": 114594,
+    "response_chars": 114018,
+    "response_tokens": 41307,
+    "abstract_recall": 1.0,
+    "rep": 2
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "2005.14165v4",
+    "startup_ms": 89.08372599989889,
+    "cold_ms": 645.8978020000359,
+    "is_error": false,
+    "warm_ms": [
+     3.7413009999909264,
+     4.132109999773093,
+     3.813884000010148,
+     3.6344210002425825,
+     3.5021290000258887
+    ],
+    "peak_rss_mib": 24.3,
+    "source": "html",
+    "response_chars": 262912,
+    "response_tokens": 55799,
+    "content_chars": 253378,
+    "content_tokens": 51802,
+    "abstract_recall": 1.0,
+    "rep": 2
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "2005.14165v4",
+    "startup_ms": 636.8562869997731,
+    "cold_ms": 948.2242770000084,
+    "is_error": false,
+    "warm_ms": [
+     7.541594000031182,
+     7.781689999774244,
+     7.019724999736354,
+     7.713635000072827,
+     6.937023999853409
+    ],
+    "peak_rss_mib": 87.2,
+    "source": "html",
+    "response_chars": 244647,
+    "response_tokens": 65066,
+    "content_chars": 233913,
+    "content_tokens": 61013,
+    "abstract_recall": 1.0,
+    "rep": 2
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "2005.14165v4",
+    "cold_ms": 300.5576169998676,
+    "source": "html",
+    "response_bytes": 1220894,
+    "response_chars": 1218220,
+    "response_tokens": 462959,
+    "abstract_recall": 1.0,
+    "rep": 2
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "2307.09288v2",
+    "startup_ms": 83.50782400020762,
+    "cold_ms": 651.1532900003658,
+    "is_error": false,
+    "warm_ms": [
+     3.623691000029794,
+     3.5422460000518186,
+     3.271623999808071,
+     3.1137409996517817,
+     3.2639770001878787
+    ],
+    "peak_rss_mib": 23.2,
+    "source": "html",
+    "response_chars": 242256,
+    "response_tokens": 63930,
+    "content_chars": 227967,
+    "content_tokens": 57166,
+    "abstract_recall": 1.0,
+    "rep": 2
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "2307.09288v2",
+    "startup_ms": 662.5690519999807,
+    "cold_ms": 858.940800000255,
+    "is_error": false,
+    "warm_ms": [
+     8.800449000318622,
+     7.765584000026138,
+     8.372685999802343,
+     7.781410000006872,
+     8.180041999821697
+    ],
+    "peak_rss_mib": 90.9,
+    "source": "html",
+    "response_chars": 268531,
+    "response_tokens": 72483,
+    "content_chars": 256779,
+    "content_tokens": 67867,
+    "abstract_recall": 1.0,
+    "rep": 2
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "2307.09288v2",
+    "cold_ms": 296.0793519996514,
+    "source": "html",
+    "response_bytes": 1071548,
+    "response_chars": 1067506,
+    "response_tokens": 384590,
+    "abstract_recall": 1.0,
+    "rep": 2
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "1412.6980v9",
+    "startup_ms": 84.15281299994604,
+    "cold_ms": 736.0960770001839,
+    "is_error": false,
+    "warm_ms": [
+     1.7102649999287678,
+     1.2159460002294509,
+     1.238028999978269,
+     1.0952820002785302,
+     1.1247539996475098
+    ],
+    "peak_rss_mib": 23.0,
+    "source": "pdf",
+    "response_chars": 45974,
+    "response_tokens": 14370,
+    "content_chars": 43361,
+    "content_tokens": 13379,
+    "abstract_recall": 0.989,
+    "rep": 2
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "1412.6980v9",
+    "startup_ms": 690.5159479997565,
+    "cold_ms": 556.522261000282,
+    "is_error": false,
+    "warm_ms": [
+     4.896120000012161,
+     4.491868000059185,
+     4.208521000236942,
+     4.120412999782275,
+     4.115730999728839
+    ],
+    "peak_rss_mib": 80.7,
+    "source": "html",
+    "response_chars": 406,
+    "response_tokens": 135,
+    "content_chars": 35,
+    "content_tokens": 12,
+    "abstract_recall": 0.011,
+    "rep": 2
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "1412.6980v9",
+    "cold_ms": 190.07986199994775,
+    "source": "html",
+    "response_bytes": 20827,
+    "response_chars": 20826,
+    "response_tokens": 8219,
+    "abstract_recall": 0.092,
+    "rep": 2
+   },
+   {
+    "arm": "arxiv-search",
+    "paper": "0801.1234v2",
+    "startup_ms": 83.68943300001774,
+    "cold_ms": 931.242482000016,
+    "is_error": false,
+    "warm_ms": [
+     1.2248299999555456,
+     1.1719169997377321,
+     1.013943000089057,
+     1.0479930001565663,
+     1.0730260000855196
+    ],
+    "peak_rss_mib": 23.0,
+    "source": "pdf",
+    "response_chars": 49960,
+    "response_tokens": 10908,
+    "content_chars": 47636,
+    "content_tokens": 10170,
+    "abstract_recall": 1.0,
+    "rep": 2
+   },
+   {
+    "arm": "arxiv-mcp-server",
+    "paper": "0801.1234v2",
+    "startup_ms": 612.010260000261,
+    "cold_ms": 7404.326374999982,
+    "is_error": false,
+    "warm_ms": [
+     5.517058999885194,
+     4.886406999958126,
+     4.543815000033646,
+     5.033728999933373,
+     4.813397000361874
+    ],
+    "peak_rss_mib": 428.3,
+    "source": "pdf",
+    "response_chars": 54610,
+    "response_tokens": 13220,
+    "content_chars": 52596,
+    "content_tokens": 12009,
+    "abstract_recall": 1.0,
+    "rep": 2
+   },
+   {
+    "arm": "raw-fetch",
+    "paper": "0801.1234v2",
+    "cold_ms": 567.881282000144,
+    "source": "pdf",
+    "response_bytes": 129454,
+    "rep": 2
+   }
+  ]
+ }
+}

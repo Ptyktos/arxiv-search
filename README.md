@@ -16,6 +16,25 @@ The main retrieval flow is designed for LLM ingestion: retrieve paper content di
 - **Native OS Caching:** Caches fetched HTML/PDFs and metadata in the OS cache directory (`~/.cache/mcp/` on Linux, `~/Library/Caches/org.arxiv-search.mcp/` on macOS) and keeps prepared responses in memory, so repeat requests skip HTTP and re-processing entirely.
 
 
+## Benchmarks
+
+Measured against [`arxiv-mcp-server`](https://github.com/blazickjp/arxiv-mcp-server) 0.7.2 on the same 8 papers, end to end over MCP stdio.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="benchmarks/arxiv/charts/summary-dark.svg">
+  <img alt="arxiv-search vs arxiv-mcp-server: times better per metric" src="benchmarks/arxiv/charts/summary-light.svg">
+</picture>
+
+| | arxiv-search | arxiv-mcp-server 0.7.2 |
+|---|---:|---:|
+| First request, paper ID to full text (7 papers, total) | **4.1 s** | 12.2 s |
+| Repeat request (7 papers, total) | **14 ms** | 46 ms |
+| Tokens in context (7 papers, total) | **183,625** | 214,798 |
+| Peak memory | **23–25 MiB** | 81–432 MiB |
+| Startup | **88 ms** | 664 ms |
+
+Charts, per-paper numbers, methodology, and a one-command reproduction are in [`benchmarks/`](benchmarks/README.md).
+
 ## Tools
 
 ### `search`
