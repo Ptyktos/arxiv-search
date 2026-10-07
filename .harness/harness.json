@@ -1,0 +1,282 @@
+{
+  "task": "Bring arxiv-search up to the Ptyktos public-repo governance baseline: fix broken dependabot.yml ecosystem value, add scorecard/supply-chain workflows, deny.toml, and a concrete security contact email",
+  "repo_root": "/home/ctown/projects/arxiv-search",
+  "created_by": "syndesi harness",
+  "phase": "Planning",
+  "constraints": [
+    {
+      "id": "FLOOR",
+      "rank": 0,
+      "source": "machine floor",
+      "text": "Never edit/write anything whose path contains `.env`",
+      "check": "path:.env"
+    },
+    {
+      "id": "FLOOR",
+      "rank": 0,
+      "source": "machine floor",
+      "text": "Never edit/write anything whose path contains `.pem`",
+      "check": "path:.pem"
+    },
+    {
+      "id": "FLOOR",
+      "rank": 0,
+      "source": "machine floor",
+      "text": "Never edit/write anything whose path contains `.key`",
+      "check": "path:.key"
+    },
+    {
+      "id": "FLOOR",
+      "rank": 0,
+      "source": "machine floor",
+      "text": "Never edit/write anything whose path contains `.p12`",
+      "check": "path:.p12"
+    },
+    {
+      "id": "FLOOR",
+      "rank": 0,
+      "source": "machine floor",
+      "text": "Never edit/write anything whose path contains `.pfx`",
+      "check": "path:.pfx"
+    },
+    {
+      "id": "FLOOR",
+      "rank": 0,
+      "source": "machine floor",
+      "text": "Never edit/write anything whose path contains `credentials`",
+      "check": "path:credentials"
+    },
+    {
+      "id": "FLOOR",
+      "rank": 0,
+      "source": "machine floor",
+      "text": "Never edit/write anything whose path contains `secrets/`",
+      "check": "path:secrets"
+    },
+    {
+      "id": "FLOOR",
+      "rank": 0,
+      "source": "machine floor",
+      "text": "Never edit/write anything whose path contains `.ssh/`",
+      "check": "path:.ssh"
+    },
+    {
+      "id": "FLOOR",
+      "rank": 0,
+      "source": "machine floor",
+      "text": "Never edit/write anything whose path contains `.aws/`",
+      "check": "path:.aws"
+    },
+    {
+      "id": "FLOOR",
+      "rank": 0,
+      "source": "machine floor",
+      "text": "Never edit/write anything whose path contains `.gnupg/`",
+      "check": "path:.gnupg"
+    },
+    {
+      "id": "FLOOR",
+      "rank": 0,
+      "source": "machine floor",
+      "text": "Never edit/write anything whose path contains `.git/`",
+      "check": "path:.git"
+    },
+    {
+      "id": "FLOOR",
+      "rank": 0,
+      "source": "machine floor",
+      "text": "Never edit/write anything whose path contains `.claude/`",
+      "check": "path:.claude"
+    },
+    {
+      "id": "FLOOR",
+      "rank": 0,
+      "source": "machine floor",
+      "text": "Never edit/write anything whose path contains `.agents/`",
+      "check": "path:.agents"
+    },
+    {
+      "id": "FLOOR",
+      "rank": 0,
+      "source": "machine floor",
+      "text": "Never edit/write anything whose path contains `.config/opencode`",
+      "check": "path:.config/opencode"
+    },
+    {
+      "id": "C1",
+      "rank": 2,
+      "source": "/home/ctown/.config/opencode/AGENTS.md",
+      "text": "If a guard ever passes something it should refuse, fix the guard — do not",
+      "check": null
+    },
+    {
+      "id": "C2",
+      "rank": 2,
+      "source": "/home/ctown/.config/opencode/AGENTS.md",
+      "text": "the work. Do not substitute a generic plan, a different checkout, or a",
+      "check": null
+    },
+    {
+      "id": "C3",
+      "rank": 0,
+      "source": "/home/ctown/.config/opencode/AGENTS.md",
+      "text": "A class of solution that failed once is never re-proposed; three failed",
+      "check": null
+    },
+    {
+      "id": "C4",
+      "rank": 0,
+      "source": "/home/ctown/.config/opencode/AGENTS.md",
+      "text": "Never run the heavy path when the cheap path answers the question.",
+      "check": null
+    },
+    {
+      "id": "C5",
+      "rank": 0,
+      "source": "/home/ctown/.config/opencode/AGENTS.md",
+      "text": "5. Secrets are never read, written, or committed",
+      "check": null
+    },
+    {
+      "id": "C6",
+      "rank": 0,
+      "source": "/home/ctown/.claude/CLAUDE.md",
+      "text": "step that is red means **REPLAN** — never retry blind, never continue",
+      "check": null
+    },
+    {
+      "id": "C7",
+      "rank": 0,
+      "source": "/home/ctown/.claude/CLAUDE.md",
+      "text": "Secrets are never read, written, or committed (`.env*`, keys, credentials,",
+      "check": null
+    },
+    {
+      "id": "C8",
+      "rank": 0,
+      "source": "/home/ctown/.claude/CLAUDE.md",
+      "text": "Destructive commands are never run (sudo, shutdown, mkfs, dd, force-push,",
+      "check": null
+    },
+    {
+      "id": "C9",
+      "rank": 0,
+      "source": "/home/ctown/.claude/CLAUDE.md",
+      "text": "The anti-loop rule: a class of solution that failed once is never",
+      "check": null
+    },
+    {
+      "id": "C10",
+      "rank": 1,
+      "source": "/home/ctown/projects/arxiv-search/AGENTS.md",
+      "text": "1. **Client Usage (RAG)** — Define the patterns and tools agents must use to query, retrieve, and synthesize scientific literature from the server efficiently and without hallucination.",
+      "check": null
+    },
+    {
+      "id": "C11",
+      "rank": 2,
+      "source": "/home/ctown/projects/arxiv-search/AGENTS.md",
+      "text": "Whether you are using the MCP tools or developing the Rust codebase, **do not invent patterns or guess parameters.**",
+      "check": null
+    },
+    {
+      "id": "C12",
+      "rank": 2,
+      "source": "/home/ctown/projects/arxiv-search/AGENTS.md",
+      "text": "For Users:** Rely on the server's multi-stage retrieval pipelines (`hdrr`) and structural pruning mechanisms. Do not hallucinate API parameters (e.g., `q` vs `query`).",
+      "check": null
+    },
+    {
+      "id": "C13",
+      "rank": 2,
+      "source": "/home/ctown/projects/arxiv-search/AGENTS.md",
+      "text": "For Developers:** If the server exhibits bugs (e.g., rate-limit collapses, 429 backoff loops), do not slap generic ML or async band-aids on the code. Step back, trace the physical data flow (the \"f...",
+      "check": null
+    },
+    {
+      "id": "C14",
+      "rank": 1,
+      "source": "/home/ctown/projects/arxiv-search/AGENTS.md",
+      "text": "MANDATORY READING FOR USERS:** You MUST read the relevant modular documentation in `docs/agents/` before issuing requests to the MCP.",
+      "check": null
+    },
+    {
+      "id": "C15",
+      "rank": 1,
+      "source": "/home/ctown/projects/arxiv-search/AGENTS.md",
+      "text": "Agents tasked with developing or maintaining the `arxiv-search` codebase MUST adhere to these tenets:",
+      "check": null
+    },
+    {
+      "id": "C16",
+      "rank": 1,
+      "source": "/home/ctown/projects/arxiv-search/AGENTS.md",
+      "text": "Code without citation is hallucination.** Every logic block involving arXiv API limits, semantic scholar graph endpoints, or embedded database schemas must be justifiable.",
+      "check": null
+    },
+    {
+      "id": "C17",
+      "rank": 2,
+      "source": "/home/ctown/projects/arxiv-search/AGENTS.md",
+      "text": "The codebase leverages asynchronous Tokio primitives and file-based cross-process locking. Ensure you understand the consequences of blocking operations vs async yields. Do not write code that intr...",
+      "check": null
+    },
+    {
+      "id": "C18",
+      "rank": 0,
+      "source": "/home/ctown/projects/arxiv-search/AGENTS.md",
+      "text": "Never claim absolute certainty or use definitive \"100% solved\" rhetoric. Frame code changes, bug fixes, and asynchronous queue management as high-confidence hypotheses supported by immediate empiri...",
+      "check": null
+    },
+    {
+      "id": "C19",
+      "rank": 1,
+      "source": "/home/ctown/projects/arxiv-search/AGENTS.md",
+      "text": "The Wave-Based Approach:** Agents are deployed in distinct, sequential Waves (**Alpha**, **Beta**, **Gamma**, **Delta**). A wave must fully resolve and merge before the next wave begins.",
+      "check": null
+    },
+    {
+      "id": "C20",
+      "rank": 1,
+      "source": "/home/ctown/projects/arxiv-search/AGENTS.md",
+      "text": "Every agent deployment to modify the server MUST strictly adhere to this format to constrain the problem space:",
+      "check": null
+    }
+  ],
+  "steps": [
+    {
+      "id": "V1",
+      "title": "rustfmt clean",
+      "cmd": "cargo fmt --all -- --check",
+      "blocking": false
+    },
+    {
+      "id": "V2",
+      "title": "clippy clean",
+      "cmd": "cargo clippy --all-targets -- -D warnings",
+      "blocking": false
+    },
+    {
+      "id": "V3",
+      "title": "tests pass",
+      "cmd": "cargo test --quiet",
+      "blocking": true
+    }
+  ],
+  "created_unix": 1790511356,
+  "task_hash": "2744a6ae9b08af8d",
+  "sources": [
+    {
+      "path": "/home/ctown/.config/opencode/AGENTS.md",
+      "hash": "cf960b9d5e9d8ef8"
+    },
+    {
+      "path": "/home/ctown/.claude/CLAUDE.md",
+      "hash": "4272beddeb889ebd"
+    },
+    {
+      "path": "/home/ctown/projects/arxiv-search/AGENTS.md",
+      "hash": "5a6a4791b8918232"
+    }
+  ]
+}
