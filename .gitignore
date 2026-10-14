@@ -3,3 +3,12 @@
 *.swp
 *.swo
 .DS_Store
+
+# Agent scratch - never commit
+.harness/
+.box/
+.cache/
+__pycache__/
+*.pyc
+*.log
+
